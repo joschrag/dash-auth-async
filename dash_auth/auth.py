@@ -6,16 +6,15 @@ from dash import Dash
 from flask import request
 
 from .public_routes import (
-    add_public_routes, get_public_callbacks, get_public_routes
+    add_public_routes,
+    get_public_callbacks,
+    get_public_routes,
 )
 
 
 class Auth(ABC):
     def __init__(
-        self,
-        app: Dash,
-        public_routes: Optional[list] = None,
-        **obsolete
+        self, app: Dash, public_routes: Optional[list] = None, **obsolete
     ):
         """Auth base class for authentication in Dash.
 
@@ -47,12 +46,13 @@ class Auth(ABC):
 
         @server.before_request
         def before_request_auth():
-
             public_routes = get_public_routes(self.app)
             public_callbacks = get_public_callbacks(self.app)
-            url_base =  (self.app.config.get("url_base_pathname","") 
-                or self.app.config.get("requests_pathname_prefix","") 
-                or self.app.config.get("routes_pathname_prefix",""))
+            url_base = (
+                self.app.config.get("url_base_pathname", "")
+                or self.app.config.get("requests_pathname_prefix", "")
+                or self.app.config.get("routes_pathname_prefix", "")
+            )
             # Handle Dash's callback route:
             # * Check whether the callback is marked as public
             # * Check whether the callback is performed on route change in
@@ -70,7 +70,8 @@ class Auth(ABC):
                 # should be checked against the public routes
                 pathname = next(
                     (
-                        inp.get("value") for inp in body["inputs"]
+                        inp.get("value")
+                        for inp in body["inputs"]
                         if isinstance(inp, dict)
                         and inp.get("property") == "pathname"
                     ),
