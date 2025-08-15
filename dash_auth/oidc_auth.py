@@ -242,7 +242,9 @@ class OIDCAuth(Auth):
     def logout(self):  # pylint: disable=C0116
         """Logout the user."""
         session.clear()
-        base_url = self.app.config.get("url_base_pathname") or "/"
+        base_url = (self.app.config.get("url_base_pathname")
+            or self.app.config.get("routes_pathname_prefix")
+            or "/")
         page = self.logout_page or f"""
         <div style="display: flex; flex-direction: column;
         gap: 0.75rem; padding: 3rem 5rem;">
@@ -288,7 +290,9 @@ class OIDCAuth(Auth):
             if self.log_signins:
                 logging.info("User %s is logging in.", user.get("email"))
 
-        return redirect(self.app.config.get("url_base_pathname") or "/")
+        return redirect(self.app.config.get("url_base_pathname")
+            or self.app.config.get("routes_pathname_prefix")
+            or "/")
 
     def is_authorized(self):  # pylint: disable=C0116
         """Check whether ther user is authenticated."""
