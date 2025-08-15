@@ -9,6 +9,7 @@ from dash_auth import (
     protected_callback,
     OIDCAuth,
 )
+import pytest
 
 
 def valid_authorize_redirect(_, redirect_uri, *args, **kwargs):
@@ -27,10 +28,19 @@ def valid_authorize_access_token(*args, **kwargs):
     }
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"routes_pathname_prefix": "/app/"},
+        {"routes_pathname_prefix": "/app/", "requests_pathname_prefix": "/app/"},
+    ],
+)
 @patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_redirect", valid_authorize_redirect)
 @patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_access_token", valid_authorize_access_token)
-def test_oa001_oidc_auth_login_flow_success(dash_br, dash_thread_server):
-    app = Dash(__name__)
+def test_oa001_oidc_auth_login_flow_success(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div([
         dcc.Input(id="input", value="initial value"),
         html.Div(id="output1"),
@@ -89,7 +99,12 @@ def test_oa001_oidc_auth_login_flow_success(dash_br, dash_thread_server):
         server_metadata_url="https://idp.com/oidc/2/.well-known/openid-configuration",
     )
     dash_thread_server(app)
-    base_url = dash_thread_server.url
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
+    base_url = dash_thread_server.url + path_prefix
 
     assert requests.get(base_url).status_code == 200
 
@@ -101,9 +116,18 @@ def test_oa001_oidc_auth_login_flow_success(dash_br, dash_thread_server):
     dash_br.wait_for_text_to_equal("#output5", "initial value")
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"routes_pathname_prefix": "/app/"},
+        {"routes_pathname_prefix": "/app/", "requests_pathname_prefix": "/app/"},
+    ],
+)
 @patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_redirect", invalid_authorize_redirect)
-def test_oa002_oidc_auth_login_fail(dash_thread_server):
-    app = Dash(__name__)
+def test_oa002_oidc_auth_login_fail(dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div([
         dcc.Input(id="input", value="initial value"),
         html.Div(id="output")
@@ -122,7 +146,12 @@ def test_oa002_oidc_auth_login_fail(dash_thread_server):
         server_metadata_url="https://idp.com/oidc/2/.well-known/openid-configuration",
     )
     dash_thread_server(app)
-    base_url = dash_thread_server.url
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
+    base_url = dash_thread_server.url + path_prefix
 
     def test_unauthorized(url):
         r = requests.get(url)
@@ -133,13 +162,22 @@ def test_oa002_oidc_auth_login_fail(dash_thread_server):
         assert requests.get(url).status_code == 200
 
     test_unauthorized(base_url)
-    test_authorized(os.path.join(base_url, "public"))
+    test_authorized("/".join([base_url, "public"]))
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"routes_pathname_prefix": "/app/"},
+        {"routes_pathname_prefix": "/app/", "requests_pathname_prefix": "/app/"},
+    ],
+)
 @patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_redirect", valid_authorize_redirect)
 @patch("authlib.integrations.flask_client.apps.FlaskOAuth2App.authorize_access_token", valid_authorize_access_token)
-def test_oa003_oidc_auth_login_several_idp(dash_br, dash_thread_server):
-    app = Dash(__name__)
+def test_oa003_oidc_auth_login_several_idp(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div([
         dcc.Input(id="input", value="initial value"),
         html.Div(id="output1"),
@@ -168,21 +206,26 @@ def test_oa003_oidc_auth_login_several_idp(dash_br, dash_thread_server):
     )
 
     dash_thread_server(app)
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
     base_url = dash_thread_server.url
-
+    base_url_prefix = (base_url + path_prefix).strip("/")
     assert requests.get(base_url).status_code == 400
 
     # Login with IDP1
-    assert requests.get(os.path.join(base_url, "oidc/idp1/login")).status_code == 200
+    assert requests.get(base_url + "/oidc/idp1/login").status_code == 200
 
     # Logout
-    assert requests.get(os.path.join(base_url, "oidc/logout")).status_code == 200
+    assert requests.get(base_url + "/oidc/logout").status_code == 200
 
     assert requests.get(base_url).status_code == 400
 
     # Login with IDP2
-    assert requests.get(os.path.join(base_url, "oidc/idp2/login")).status_code == 200
+    assert requests.get(base_url + "/oidc/idp2/login").status_code == 200
 
-    dash_br.driver.get(os.path.join(base_url, "oidc/idp2/login"))
-    dash_br.driver.get(base_url)
+    dash_br.driver.get(base_url + "/oidc/idp2/login")
+    dash_br.driver.get(base_url_prefix)
     dash_br.wait_for_text_to_equal("#output1", "initial value")

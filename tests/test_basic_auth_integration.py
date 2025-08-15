@@ -1,6 +1,6 @@
 from dash import Dash, Input, Output, dcc, html
 import requests
-
+import pytest
 from dash_auth import BasicAuth, add_public_routes, protected
 
 
@@ -15,8 +15,17 @@ TEST_USERS = {
 }
 
 
-def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server):
-    app = Dash(__name__)
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"routes_pathname_prefix": "/app/"},
+        {"routes_pathname_prefix": "/app/", "requests_pathname_prefix": "/app/"},
+    ],
+)
+def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div([
         dcc.Input(id="input", value="initial value"),
         html.Div(id="output")
@@ -30,7 +39,12 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server):
     add_public_routes(app, ["/user/<user_id>/public"])
 
     dash_thread_server(app)
-    base_url = dash_thread_server.url
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
+    base_url = dash_thread_server.url + path_prefix
 
     def test_failed_views(url):
         assert requests.get(url).status_code == 401
@@ -60,8 +74,17 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server):
         dash_br.wait_for_text_to_equal("#output", "initial value")
 
 
-def test_ba002_basic_auth_groups(dash_br, dash_thread_server):
-    app = Dash(__name__)
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"routes_pathname_prefix": "/app/"},
+        {"routes_pathname_prefix": "/app/", "requests_pathname_prefix": "/app/"},
+    ],
+)
+def test_ba002_basic_auth_groups(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div([
         dcc.Input(id="input", value="initial value"),
         html.Div(id="output")
@@ -89,7 +112,12 @@ def test_ba002_basic_auth_groups(dash_br, dash_thread_server):
     )
 
     dash_thread_server(app)
-    base_url = dash_thread_server.url
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
+    base_url = dash_thread_server.url + path_prefix
 
     for user, password in TEST_USERS["valid"]:
         # login using the URL instead of the alert popup
