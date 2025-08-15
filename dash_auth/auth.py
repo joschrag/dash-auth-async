@@ -50,11 +50,15 @@ class Auth(ABC):
 
             public_routes = get_public_routes(self.app)
             public_callbacks = get_public_callbacks(self.app)
+            url_base =  (self.app.config.get("url_base_pathname","") 
+                or self.app.config.get("requests_pathname_prefix","") 
+                or self.app.config.get("routes_pathname_prefix",""))
             # Handle Dash's callback route:
             # * Check whether the callback is marked as public
             # * Check whether the callback is performed on route change in
             #   which case the path should be checked against the public routes
-            if request.path == "/_dash-update-component":
+            callback_path = f"{url_base.rstrip('/')}/_dash-update-component"
+            if request.path == callback_path:
                 body = request.get_json()
 
                 # Check whether the callback is marked as public
