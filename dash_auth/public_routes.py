@@ -48,11 +48,18 @@ def add_public_routes(app: Dash, routes: list):
     """
 
     public_routes = get_public_routes(app)
+    url_base = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
 
     if not public_routes.map._rules:
         routes = BASE_PUBLIC_ROUTES + routes
 
     for route in routes:
+        if url_base and not route.startswith(url_base):
+            route = url_base.rstrip("/") + route
         public_routes.map.add(Rule(route))
 
     app.server.config[PUBLIC_ROUTES] = public_routes
