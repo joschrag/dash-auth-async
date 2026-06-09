@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dash-auth"
+version = "2.3.0"
+description = "Dash Authorization Package."
+readme = "README.md"
+requires-python = ">=3.13"
+license = {text = "MIT"}
+authors = [
+    {name = "Christopher Parmer", email = "chris@plotly.com"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Widget Sets",
+]
+dependencies = [
+    "authlib>=1.7.2",
+    "dash>=2",
+    "flake8>=7.3.0",
+    "flask>=3.1.3",
+    "requests[security]>=2.34.2",
+    "werkzeug>=3.1.8",
+]
+
+[project.optional-dependencies]
+oidc = ["authlib"]
+
+[project.urls]
+Homepage = "https://plotly.com/dash"
+
+[tool.setuptools.packages.find]
+include = ["dash_auth*"]
+
+[dependency-groups]
+dev = [
+    "creosote>=5.2.0",
+    "dash[testing]>=2",
+    "mypy>=2.1.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.16",
+]
