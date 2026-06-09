@@ -39,7 +39,6 @@ classifiers = [
 dependencies = [
     "authlib>=1.7.2",
     "dash>=2",
-    "flake8>=7.3.0",
     "flask>=3.1.3",
     "requests[security]>=2.34.2",
     "werkzeug>=3.1.8",
@@ -63,3 +62,10 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.16",
 ]
+
+[tool.creosote]
+venvs = [".venv"]
+paths = ["dash_auth"]
+deps-file = "pyproject.toml"
+sections = ["project.dependencies"]
+exclude-deps = ["requests"]
