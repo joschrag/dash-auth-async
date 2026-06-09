@@ -9,6 +9,7 @@ from .public_routes import (
     add_public_routes,
     get_public_callbacks,
     get_public_routes,
+    get_url_base,
 )
 
 
@@ -48,11 +49,7 @@ class Auth(ABC):
         def before_request_auth():
             public_routes = get_public_routes(self.app)
             public_callbacks = get_public_callbacks(self.app)
-            url_base = (
-                self.app.config.get("url_base_pathname", "")
-                or self.app.config.get("requests_pathname_prefix", "")
-                or self.app.config.get("routes_pathname_prefix", "")
-            )
+            url_base = get_url_base(self.app)
             # Handle Dash's callback route:
             # * Check whether the callback is marked as public
             # * Check whether the callback is performed on route change in
