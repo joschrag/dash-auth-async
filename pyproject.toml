@@ -3,14 +3,14 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dash-auth"
+name = "dash-auth-async"
 version = "2.3.0"
 description = "Dash Authorization Package."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Christopher Parmer", email = "chris@plotly.com"},
+    {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -25,8 +25,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -48,7 +46,8 @@ dependencies = [
 oidc = ["authlib"]
 
 [project.urls]
-Homepage = "https://plotly.com/dash"
+Homepage = "https://github.com/joschrag/dash-auth-async"
+"Original project" = "https://github.com/plotly/dash-auth"
 
 [tool.setuptools.packages.find]
 include = ["dash_auth*"]

@@ -1,34 +1,17 @@
 ## Dash Authorization and Login
 
-<div align="center">
-  <a href="https://dash.plotly.com/project-maintenance">
-    <img src="https://dash.plotly.com/assets/images/maintained-by-plotly.png" width="400px" alt="Maintained by Plotly">
-  </a>
-</div>
-
-Docs: [https://dash.plotly.com/authentication](https://dash.plotly.com/authentication)
+Maintained by [joschrag](https://github.com/joschrag/). Forked from [plotly/dash-auth](https://github.com/plotly/dash-auth) with the goal to add support for the new 4.x dash backends.
 
 License: MIT
 
-Tests: [![CircleCI](https://circleci.com/gh/plotly/dash-auth.svg?style=svg)](https://circleci.com/gh/plotly/dash-auth)
-
-For local testing, create a virtualenv, install the dev requirements, and run individual
-tests or test classes:
+For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
 
 ```
-python -m venv venv
-. venv/bin/activate
-pip install -r dev-requirements.txt
-python -k ba001
+uv sync
+uv run pytest -k ba001
 ```
 
-Note that Python 3.8 or greater is required.
-
-> Please note that Plotly will continue to merge bug fixes to this package,
-> but will no longer accept new features as we consider this package feature-complete.
-> For those looking for a more advanced authentication offering from Plotly,
-> Dash Enterprise offers authentication middleware for Dash apps.
-> Learn more at: https://plotly.com/dash/authentication/
+Note that Python 3.10 or greater is required.
 
 ## Usage
 
