@@ -52,9 +52,7 @@ def valid_authorize_access_token(*args, **kwargs):
     f"{_FLASK_OAUTH_MODULE}.authorize_access_token",
     valid_authorize_access_token,
 )
-def test_oa001_oidc_auth_login_flow_success(
-    dash_br, dash_thread_server, kwargs
-):
+def test_oa001_oidc_auth_login_flow_success(dash_br, dash_thread_server, kwargs):
     app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [
@@ -207,9 +205,7 @@ def test_oa002_oidc_auth_login_fail(dash_thread_server, kwargs):
     f"{_FLASK_OAUTH_MODULE}.authorize_access_token",
     valid_authorize_access_token,
 )
-def test_oa003_oidc_auth_login_several_idp(
-    dash_br, dash_thread_server, kwargs
-):
+def test_oa003_oidc_auth_login_several_idp(dash_br, dash_thread_server, kwargs):
     app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [

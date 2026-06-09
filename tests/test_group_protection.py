@@ -12,9 +12,7 @@ def test_gp001_list_groups():
             "tenant": "ABC",
         }
         assert list_groups() == ["default"]
-        assert list_groups(groups_key="tenant", groups_str_split=",") == [
-            "ABC"
-        ]
+        assert list_groups(groups_key="tenant", groups_str_split=",") == ["ABC"]
 
 
 def test_gp002_check_groups():
@@ -31,9 +29,7 @@ def test_gp002_check_groups():
         assert check_groups(["default", "other"]) is True
         assert check_groups(["other", "default"], check_type="all_of") is False
         assert check_groups(["default"], check_type="all_of") is True
-        assert (
-            check_groups(["other", "default"], check_type="none_of") is False
-        )
+        assert check_groups(["other", "default"], check_type="none_of") is False
         assert check_groups(["other"], check_type="none_of") is True
 
 

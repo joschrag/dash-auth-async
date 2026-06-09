@@ -5,6 +5,7 @@ import dash_auth
 VALID_USERNAME_PASSWORD_PAIRS = {"hello": "world"}
 SECRET = "Test!"
 
+
 # Authorization function defined by developer
 # (can be used instead of VALID_USERNAME_PASSWORD_PAIRS [Example 2 below])
 def authorization_function(username, password):
@@ -18,9 +19,7 @@ external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"]
 app = Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Example 1 (using username/password map)
-auth = dash_auth.BasicAuth(
-    app, VALID_USERNAME_PASSWORD_PAIRS, secret_key=SECRET
-)
+auth = dash_auth.BasicAuth(app, VALID_USERNAME_PASSWORD_PAIRS, secret_key=SECRET)
 
 # Example 2 (using authorization function)
 # auth = dash_auth.BasicAuth(app, auth_func=authorization_function)

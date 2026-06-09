@@ -46,14 +46,9 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
         assert requests.get(url).status_code == 401
 
     def test_successful_views(url):
-        assert (
-            requests.get(url.rstrip("/") + "/_dash-layout").status_code == 200
-        )
+        assert requests.get(url.rstrip("/") + "/_dash-layout").status_code == 200
         assert requests.get(url.rstrip("/") + "/home").status_code == 200
-        assert (
-            requests.get(url.rstrip("/") + "/user/john123/public").status_code
-            == 200
-        )
+        assert requests.get(url.rstrip("/") + "/user/john123/public").status_code == 200
 
     test_failed_views(base_url)
     test_successful_views(base_url)

@@ -35,9 +35,7 @@ def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server):
 
     def test_failed_views(url):
         assert requests.get(url).status_code == 401
-        assert (
-            requests.get(url.strip("/") + "/_dash-layout").status_code == 401
-        )
+        assert requests.get(url.strip("/") + "/_dash-layout").status_code == 401
 
     test_failed_views(base_url)
 
