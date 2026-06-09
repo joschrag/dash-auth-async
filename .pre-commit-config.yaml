@@ -16,10 +16,10 @@ repos:
     -   id: creosote
   - repo: local
     hooks:
-    -   id: uv-mypy
-        name: uv mypy
-        entry: uv run mypy
+    -   id: uv-ty
+        name: uv ty
+        entry: uv run ty check
         language: system
         types: [python]
         pass_filenames: false
-        args: [--package, dash_auth]
+        args: [dash_auth]

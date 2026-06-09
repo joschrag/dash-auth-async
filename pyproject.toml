@@ -7,7 +7,7 @@ name = "dash-auth"
 version = "2.3.0"
 description = "Dash Authorization Package."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Christopher Parmer", email = "chris@plotly.com"},
@@ -57,9 +57,9 @@ include = ["dash_auth*"]
 dev = [
     "creosote>=5.2.0",
     "dash[testing]>=2",
-    "mypy>=2.1.0",
-    "pre-commit>=4.6.0",
-    "pytest>=9.0.3",
+    "ty",
+    "pre-commit>=3.5.0",
+    "pytest>=8.3.5",
     "ruff>=0.15.16",
 ]
 
