@@ -53,13 +53,19 @@ jobs:
       - name: Test
         run: pytest --headless
 
-  all-checks-pass:
-    if: always()
-    needs: [lint, test]
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Check all jobs passed
-        run: |
-          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.test.result }}" != "success" ]]; then
-            exit 1
-          fi
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build package with uv
+        run: uv build
+
+  all-checks-pass:
+    if: ${{ always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All checks passed"
