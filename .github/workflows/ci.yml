@@ -20,11 +20,11 @@ jobs:
 
       - name: Ruff
         run: |
-          uv run ruff check dash_auth
-          uv run ruff format --check dash_auth
+          uv run ruff check dash_auth_async
+          uv run ruff format --check dash_auth_async
 
       - name: Ty
-        run: uv run ty check dash_auth
+        run: uv run ty check dash_auth_async
 
   test:
     runs-on: ubuntu-latest

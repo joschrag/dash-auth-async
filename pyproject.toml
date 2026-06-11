@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dash-auth-async"
-version = "2.4.0"
+version = "1.0.0"
 description = "Dash Authorization Package."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,6 +28,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Database :: Front-Ends",
     "Topic :: Office/Business :: Financial :: Spreadsheet",
     "Topic :: Scientific/Engineering :: Visualization",
@@ -50,7 +52,7 @@ Homepage = "https://github.com/joschrag/dash-auth-async"
 "Original project" = "https://github.com/plotly/dash-auth"
 
 [tool.setuptools.packages.find]
-include = ["dash_auth*"]
+include = ["dash_auth_async*"]
 
 [dependency-groups]
 dev = [
@@ -64,7 +66,7 @@ dev = [
 
 [tool.creosote]
 venvs = [".venv"]
-paths = ["dash_auth"]
+paths = ["dash_auth_async"]
 deps-file = "pyproject.toml"
 sections = ["project.dependencies"]
 exclude-deps = ["requests"]

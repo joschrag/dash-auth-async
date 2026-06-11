@@ -1,7 +1,7 @@
 from dash import Dash, Input, Output, dcc, html
 import requests
 import pytest
-from dash_auth import BasicAuth, add_public_routes, protected
+from dash_auth_async import BasicAuth, add_public_routes, protected
 
 TEST_USERS = {
     "valid": [["hello", "world"], ["hello2", "wo:rld"]],

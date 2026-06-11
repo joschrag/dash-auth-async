@@ -22,4 +22,4 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        args: [dash_auth]
+        args: [dash_auth_async]
