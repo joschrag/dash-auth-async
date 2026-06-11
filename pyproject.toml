@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dash-auth-async"
+version = "1.0.0"
+description = "Dash Authorization Package."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Widget Sets",
+]
+dependencies = [
+    "authlib>=1.7.2",
+    "dash>=2",
+    "flask>=3.1.3",
+    "requests[security]>=2.34.2",
+    "werkzeug>=3.1.8",
+]
+
+[project.optional-dependencies]
+oidc = ["authlib"]
+
+[project.urls]
+Homepage = "https://github.com/joschrag/dash-auth-async"
+"Original project" = "https://github.com/plotly/dash-auth"
+
+[tool.setuptools.packages.find]
+include = ["dash_auth_async*"]
+
+[dependency-groups]
+dev = [
+    "creosote>=5.2.0",
+    "dash[testing]>=2",
+    "ty",
+    "pre-commit>=3.5.0",
+    "pytest>=8.3.5",
+    "ruff>=0.15.16",
+]
+
+[tool.creosote]
+venvs = [".venv"]
+paths = ["dash_auth_async"]
+deps-file = "pyproject.toml"
+sections = ["project.dependencies"]
+exclude-deps = ["requests"]

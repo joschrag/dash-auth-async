@@ -6,17 +6,15 @@ from dash import Dash
 from flask import request
 
 from .public_routes import (
-    add_public_routes, get_public_callbacks, get_public_routes
+    add_public_routes,
+    get_public_callbacks,
+    get_public_routes,
+    get_url_base,
 )
 
 
 class Auth(ABC):
-    def __init__(
-        self,
-        app: Dash,
-        public_routes: Optional[list] = None,
-        **obsolete
-    ):
+    def __init__(self, app: Dash, public_routes: Optional[list] = None, **obsolete):
         """Auth base class for authentication in Dash.
 
         :param app: Dash app
@@ -26,9 +24,7 @@ class Auth(ABC):
 
         # Deprecated arguments
         if obsolete:
-            raise TypeError(
-                f"Auth got unexpected keyword arguments: {list(obsolete)}"
-            )
+            raise TypeError(f"Auth got unexpected keyword arguments: {list(obsolete)}")
 
         self.app = app
         self._protect()
@@ -47,18 +43,24 @@ class Auth(ABC):
 
         @server.before_request
         def before_request_auth():
-
             public_routes = get_public_routes(self.app)
             public_callbacks = get_public_callbacks(self.app)
+            url_base = get_url_base(self.app)
             # Handle Dash's callback route:
             # * Check whether the callback is marked as public
             # * Check whether the callback is performed on route change in
             #   which case the path should be checked against the public routes
-            if request.path == "/_dash-update-component":
-                body = request.get_json()
+            callback_path = f"{url_base.rstrip('/')}/_dash-update-component"
+            if request.path == callback_path:
+                body = request.get_json(silent=True)
+
+                # Treat a missing or unparseable body as unauthorised rather
+                # than crashing with AttributeError/KeyError → 500.
+                if not body:
+                    return self.login_request()
 
                 # Check whether the callback is marked as public
-                if body["output"] in public_callbacks:
+                if body.get("output") in public_callbacks:
                     return None
 
                 # Check whether the callback has an input using the pathname,
@@ -66,9 +68,9 @@ class Auth(ABC):
                 # should be checked against the public routes
                 pathname = next(
                     (
-                        inp.get("value") for inp in body["inputs"]
-                        if isinstance(inp, dict)
-                        and inp.get("property") == "pathname"
+                        inp.get("value")
+                        for inp in body["inputs"]
+                        if isinstance(inp, dict) and inp.get("property") == "pathname"
                     ),
                     None,
                 )

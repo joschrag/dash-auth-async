@@ -6,13 +6,15 @@ from typing import Optional, Union, TYPE_CHECKING
 import dash
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
-from dash_auth.auth import Auth
+from dash_auth_async.auth import Auth
+from dash_auth_async.public_routes import get_url_base
 from flask import Response, redirect, request, session, url_for
 from werkzeug.routing import Map, Rule
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
-        FlaskOAuth1App, FlaskOAuth2App
+        FlaskOAuth1App,
+        FlaskOAuth2App,
     )
 
 
@@ -22,15 +24,15 @@ class OIDCAuth(Auth):
     def __init__(
         self,
         app: dash.Dash,
-        secret_key: str = Optional[None],
+        secret_key: str | None = None,
         force_https_callback: Optional[Union[bool, str]] = None,
         login_route: str = "/oidc/<idp>/login",
         logout_route: str = "/oidc/logout",
         callback_route: str = "/oidc/<idp>/callback",
-        idp_selection_route: str = None,
+        idp_selection_route: str | None = None,
         log_signins: bool = False,
         public_routes: Optional[list] = None,
-        logout_page: Union[str, Response] = None,
+        logout_page: Union[str, Response] | None = None,
         secure_session: bool = False,
     ):
         """Secure a Dash app through OpenID Connect.
@@ -62,6 +64,15 @@ class OIDCAuth(Auth):
         callback_route : str, optional
             The route for the OIDC redirect URI, it requires a <idp>
             placeholder, by default "/oidc/<idp>/callback".
+
+            NOTE: login_route, logout_route, and callback_route are
+            registered directly on the Flask server at the paths given here,
+            regardless of any ``url_base_pathname`` or
+            ``routes_pathname_prefix`` set on the Dash app. If your app is
+            deployed under a prefix (e.g. ``url_base_pathname="/app/"``), the
+            OIDC routes still live at the server root (e.g.
+            ``/oidc/<idp>/callback``), NOT under the prefix. Configure your
+            IDP's redirect URI accordingly.
         idp_selection_route : str, optional
             The route for the IDP selection function, by default None
         log_signins : bool, optional
@@ -102,8 +113,7 @@ class OIDCAuth(Auth):
             app.server.secret_key = secret_key
 
         if app.server.secret_key is None:
-            raise RuntimeError(
-                """
+            raise RuntimeError("""
                 app.server.secret_key is missing.
                 Generate a secret key in your Python session
                 with the following commands:
@@ -116,8 +126,7 @@ class OIDCAuth(Auth):
                 Note that you should not do this dynamically:
                 you should create a key and then assign the value of
                 that key in your code/via a secret.
-                """
-            )
+                """)
 
         if secure_session:
             app.server.config["SESSION_COOKIE_SECURE"] = True
@@ -127,13 +136,9 @@ class OIDCAuth(Auth):
 
         # Check that the login and callback rules have an <idp> placeholder
         if not re.findall(r"/<idp>(?=/|$)", login_route):
-            raise Exception(
-                "The login route must contain a <idp> placeholder."
-            )
+            raise Exception("The login route must contain a <idp> placeholder.")
         if not re.findall(r"/<idp>(?=/|$)", callback_route):
-            raise Exception(
-                "The callback route must contain a <idp> placeholder."
-            )
+            raise Exception("The callback route must contain a <idp> placeholder.")
 
         app.server.add_url_rule(
             login_route,
@@ -175,18 +180,14 @@ class OIDCAuth(Auth):
             )
         client_kwargs = kwargs.pop("client_kwargs", {})
         client_kwargs.setdefault("scope", "openid email")
-        self.oauth.register(
-            idp_name, client_kwargs=client_kwargs, **kwargs
-        )
+        self.oauth.register(idp_name, client_kwargs=client_kwargs, **kwargs)
 
     def get_oauth_client(self, idp: str):
         """Get the OAuth client."""
         if idp not in self.oauth._registry:
             raise ValueError(f"'{idp}' is not a valid registered idp")
 
-        client: Union[FlaskOAuth1App, FlaskOAuth2App] = (
-            self.oauth.create_client(idp)
-        )
+        client: Union[FlaskOAuth1App, FlaskOAuth2App] = self.oauth.create_client(idp)
         return client
 
     def get_oauth_kwargs(self, idp: str):
@@ -194,23 +195,23 @@ class OIDCAuth(Auth):
         if idp not in self.oauth._registry:
             raise ValueError(f"'{idp}' is not a valid registered idp")
 
-        kwargs: dict = (
-            self.oauth._registry[idp][1]
-        )
+        kwargs: dict = self.oauth._registry[idp][1]
         return kwargs
 
     def _create_redirect_uri(self, idp: str):
         """Create the redirect uri based on callback endpoint and idp."""
-        kwargs = {"_external": True}
         if self.force_https_callback:
-            kwargs["_scheme"] = "https"
-        redirect_uri = url_for("oidc_callback", idp=idp, **kwargs)
-        if request.headers.get("X-Forwarded-Host"):
-            host = request.headers.get("X-Forwarded-Host")
+            redirect_uri = url_for(
+                "oidc_callback", idp=idp, _external=True, _scheme="https"
+            )
+        else:
+            redirect_uri = url_for("oidc_callback", idp=idp, _external=True)
+        host = request.headers.get("X-Forwarded-Host")
+        if host:
             redirect_uri = redirect_uri.replace(request.host, host, 1)
         return redirect_uri
 
-    def login_request(self, idp: str = None):
+    def login_request(self, idp: str | None = None):
         """Start the login process."""
 
         # `idp` can be none here as login_request is called
@@ -226,8 +227,7 @@ class OIDCAuth(Auth):
                 return redirect(self.idp_selection_route)
             else:
                 return (
-                    "Several OAuth providers are registered. "
-                    "Please choose one.",
+                    "Several OAuth providers are registered. Please choose one.",
                     400,
                 )
 
@@ -242,14 +242,17 @@ class OIDCAuth(Auth):
     def logout(self):  # pylint: disable=C0116
         """Logout the user."""
         session.clear()
-        base_url = self.app.config.get("url_base_pathname") or "/"
-        page = self.logout_page or f"""
+        base_url = get_url_base(self.app) or "/"
+        page = (
+            self.logout_page
+            or f"""
         <div style="display: flex; flex-direction: column;
         gap: 0.75rem; padding: 3rem 5rem;">
             <div>Logged out successfully</div>
             <div><a href="{base_url}">Go back</a></div>
         </div>
         """
+        )
         return page
 
     def callback(self, idp: str):  # pylint: disable=C0116
@@ -269,7 +272,7 @@ class OIDCAuth(Auth):
         user = token.get("userinfo")
         return self.after_logged_in(user, idp, token)
 
-    def after_logged_in(self, user: Optional[dict], idp: str,  token: dict):
+    def after_logged_in(self, user: Optional[dict], idp: str, token: dict):
         """
         Post-login actions after successful OIDC authentication.
         For example, allows to pass custom attributes to the user session:
@@ -288,7 +291,7 @@ class OIDCAuth(Auth):
             if self.log_signins:
                 logging.info("User %s is logging in.", user.get("email"))
 
-        return redirect(self.app.config.get("url_base_pathname") or "/")
+        return redirect(get_url_base(self.app) or "/")
 
     def is_authorized(self):  # pylint: disable=C0116
         """Check whether ther user is authenticated."""
@@ -308,7 +311,7 @@ class OIDCAuth(Auth):
         return map_adapter.test(request.path) or "user" in session
 
 
-def get_oauth(app: dash.Dash = None) -> OAuth:
+def get_oauth(app: dash.Dash | None = None) -> OAuth:
     """Retrieve the OAuth object.
 
     :param app: dash.Dash

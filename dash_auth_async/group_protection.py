@@ -14,7 +14,7 @@ CheckType = Literal["one_of", "all_of", "none_of"]
 def list_groups(
     *,
     groups_key: str = "groups",
-    groups_str_split: str = None,
+    groups_str_split: str | None = None,
 ) -> Optional[List[str]]:
     """List all the groups the user belongs to.
 
@@ -40,7 +40,7 @@ def check_groups(
     groups: Optional[List[str]] = None,
     *,
     groups_key: str = "groups",
-    groups_str_split: str = None,
+    groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
 ) -> Optional[bool]:
     """Check whether the current user is authenticated
@@ -86,7 +86,7 @@ def protected(
     missing_permissions_output: Optional[OutputVal] = None,
     groups: Optional[List[str]] = None,
     groups_key: str = "groups",
-    groups_str_split: str = None,
+    groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
 ) -> Callable:
     """Decorate a function or output to alter it depending on the state
@@ -140,9 +140,9 @@ def protected_callback(
     *callback_args,
     unauthenticated_output: Optional[OutputVal] = None,
     missing_permissions_output: Optional[OutputVal] = None,
-    groups: List[str] = None,
+    groups: List[str] | None = None,
     groups_key: str = "groups",
-    groups_str_split: str = None,
+    groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
     **callback_kwargs,
 ) -> Callable:

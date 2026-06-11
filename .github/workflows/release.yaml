@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+jobs:
+  pypi-publish:
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/dash-auth-async/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "error: tagged commit is not on main branch"
+            exit 1
+          fi
+
+      - name: Check tag matches pyproject.toml version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(uv version --short)
+          if [ "$TAG" != "$PKG" ]; then
+            echo "error: tag $GITHUB_REF_NAME does not match pyproject.toml version $PKG"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

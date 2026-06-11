@@ -1,6 +1,6 @@
 import base64
 import logging
-from typing import Dict, List, Optional, Union, Callable
+from typing import Dict, List, Optional, Union, Callable, cast
 import flask
 from dash import Dash
 
@@ -13,13 +13,11 @@ class BasicAuth(Auth):
     def __init__(
         self,
         app: Dash,
-        username_password_list: Union[list, dict] = None,
-        auth_func: Callable = None,
+        username_password_list: Union[list, dict] | None = None,
+        auth_func: Callable | None = None,
         public_routes: Optional[list] = None,
-        user_groups: Optional[
-            Union[UserGroups, Callable[[str], UserGroups]]
-        ] = None,
-        secret_key: str = None
+        user_groups: Optional[Union[UserGroups, Callable[[str], UserGroups]]] = None,
+        secret_key: str | None = None,
     ):
         """Add basic authentication to Dash.
 
@@ -49,7 +47,12 @@ class BasicAuth(Auth):
         """
         super().__init__(app, public_routes=public_routes)
         self._auth_func = auth_func
-        self._user_groups = user_groups
+        if isinstance(user_groups, dict):
+            self._user_groups_dict: UserGroups | None = cast(UserGroups, user_groups)
+            self._user_groups_func: Callable[[str], UserGroups] | None = None
+        else:
+            self._user_groups_dict = None
+            self._user_groups_func = user_groups  # Callable or None after dict excluded
         if secret_key is not None:
             app.server.secret_key = secret_key
 
@@ -74,12 +77,12 @@ class BasicAuth(Auth):
                 )
 
     def is_authorized(self):
-        header = flask.request.headers.get('Authorization', None)
+        header = flask.request.headers.get("Authorization", None)
         if not header:
             return False
-        username_password = base64.b64decode(header.split('Basic ')[1])
-        username_password_utf8 = username_password.decode('utf-8')
-        username, password = username_password_utf8.split(':', 1)
+        username_password = base64.b64decode(header.split("Basic ")[1])
+        username_password_utf8 = username_password.decode("utf-8")
+        username, password = username_password_utf8.split(":", 1)
         authorized = False
         if self._auth_func is not None:
             try:
@@ -92,23 +95,19 @@ class BasicAuth(Auth):
         if authorized:
             try:
                 flask.session["user"] = {"email": username, "groups": []}
-                if callable(self._user_groups):
-                    flask.session["user"]["groups"] = self._user_groups(
-                        username
-                    )
-                elif self._user_groups:
-                    flask.session["user"]["groups"] = self._user_groups.get(
+                if self._user_groups_dict is not None:
+                    flask.session["user"]["groups"] = self._user_groups_dict.get(
                         username, []
                     )
+                elif self._user_groups_func is not None:
+                    flask.session["user"]["groups"] = self._user_groups_func(username)
             except RuntimeError:
-                logging.warning(
-                    "Session is not available. Have you set a secret key?"
-                )
+                logging.warning("Session is not available. Have you set a secret key?")
         return authorized
 
     def login_request(self):
         return flask.Response(
-            'Login Required',
-            headers={'WWW-Authenticate': 'Basic realm="User Visible Realm"'},
-            status=401
+            "Login Required",
+            headers={"WWW-Authenticate": 'Basic realm="User Visible Realm"'},
+            status=401,
         )

@@ -1,34 +1,17 @@
 ## Dash Authorization and Login
 
-<div align="center">
-  <a href="https://dash.plotly.com/project-maintenance">
-    <img src="https://dash.plotly.com/assets/images/maintained-by-plotly.png" width="400px" alt="Maintained by Plotly">
-  </a>
-</div>
-
-Docs: [https://dash.plotly.com/authentication](https://dash.plotly.com/authentication)
+Maintained by [joschrag](https://github.com/joschrag/). Forked from [plotly/dash-auth](https://github.com/plotly/dash-auth) with the goal to add support for the new 4.x dash backends.
 
 License: MIT
 
-Tests: [![CircleCI](https://circleci.com/gh/plotly/dash-auth.svg?style=svg)](https://circleci.com/gh/plotly/dash-auth)
-
-For local testing, create a virtualenv, install the dev requirements, and run individual
-tests or test classes:
+For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
 
 ```
-python -m venv venv
-. venv/bin/activate
-pip install -r dev-requirements.txt
-python -k ba001
+uv sync
+uv run pytest -k ba001
 ```
 
-Note that Python 3.8 or greater is required.
-
-> Please note that Plotly will continue to merge bug fixes to this package,
-> but will no longer accept new features as we consider this package feature-complete.
-> For those looking for a more advanced authentication offering from Plotly,
-> Dash Enterprise offers authentication middleware for Dash apps.
-> Learn more at: https://plotly.com/dash/authentication/
+Note that Python 3.10 or greater is required.
 
 ## Usage
 
@@ -38,7 +21,7 @@ To add basic authentication, add the following to your Dash app:
 
 ```python
 from dash import Dash
-from dash_auth import BasicAuth
+from dash_auth_async import BasicAuth
 
 app = Dash(__name__)
 USER_PWD = {
@@ -52,7 +35,7 @@ One can also use an authorization python function instead of a dictionary/list o
 
 ```python
 from dash import Dash
-from dash_auth import BasicAuth
+from dash_auth_async import BasicAuth
 
 def authorization_function(username, password):
     if (username == "hello") and (password == "world"):
@@ -73,7 +56,7 @@ The public routes should follow [Flask's route syntax](https://flask.palletsproj
 
 ```python
 from dash import Dash
-from dash_auth import BasicAuth, add_public_routes
+from dash_auth_async import BasicAuth, add_public_routes
 
 app = Dash(__name__)
 USER_PWD = {
@@ -85,13 +68,13 @@ BasicAuth(app, USER_PWD, public_routes=["/"])
 add_public_routes(app, public_routes=["/user/<user_id>/public"])
 ```
 
-NOTE: If you are using server-side callbacks on your public routes, you should also use dash_auth's new `public_callback` rather than the default Dash callback.
+NOTE: If you are using server-side callbacks on your public routes, you should also use dash_auth_async's new `public_callback` rather than the default Dash callback.
 Below is an example of a public route and callbacks on a multi-page Dash app using Dash's pages API:
 
 *app.py*
 ```python
 from dash import Dash, html, dcc, page_container
-from dash_auth import BasicAuth
+from dash_auth_async import BasicAuth
 
 app = Dash(__name__, use_pages=True, suppress_callback_exceptions=True)
 USER_PWD = {
@@ -122,7 +105,7 @@ if __name__ == "__main__":
 *pages/home.py*
 ```python
 from dash import Input, Output, html, register_page
-from dash_auth import public_callback
+from dash_auth_async import public_callback
 
 register_page(__name__, "/")
 
@@ -183,7 +166,7 @@ Once you have set up your IDP, you can add it to your Dash app as follows:
 
 ```python
 from dash import Dash
-from dash_auth import OIDCAuth
+from dash_auth_async import OIDCAuth
 
 app = Dash(__name__)
 
@@ -207,7 +190,7 @@ For multiple OIDC providers, you can use `register_provider` to add new ones aft
 
 ```python
 from dash import Dash, html
-from dash_auth import OIDCAuth
+from dash_auth_async import OIDCAuth
 from flask import request, redirect, url_for
 
 app = Dash(__name__)
@@ -266,7 +249,7 @@ if __name__ == "__main__":
 
 ### User-group-based permissions
 
-`dash_auth` provides a convenient way to secure parts of your app based on user groups.
+`dash_auth_async` provides a convenient way to secure parts of your app based on user groups.
 
 The following utilities are defined:
 * `list_groups`: Returns the groups of the current user, or None if the user is not authenticated.
@@ -285,7 +268,7 @@ If you wish to use this feature with BasicAuth, you will need to define the grou
 basicauth users:
 
 ```python
-from dash_auth import BasicAuth
+from dash_auth_async import BasicAuth
 
 app = Dash(__name__)
 USER_PWD = {
