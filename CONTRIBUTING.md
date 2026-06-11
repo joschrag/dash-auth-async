@@ -2,58 +2,26 @@
 
 ## Publishing
 
-This package is available on PyPI. We can create a new version as often as whenever a PR is merged.
+This package is available on PyPI. Releases are triggered automatically via GitHub Actions when a version tag is pushed.
 
-To publish:
+To publish a new release:
+
 1. **PyPI Access**
-- Ask @chriddyp to be added as a maintainer on PyPI.
-Note that for security reasons, this is restricted to Plotly employees.
-- PyPI has a new website, register your account here: https://pypi.org/.
-- If you already have a PyPI account, you'll need to make sure that your email is registered
-- Add your PyPI credentials to a file at `~/.pypirc`.
-It will look something like:
-```
-[distutils]
-index-servers =
-   pypi
-[pypi]
-username:your_pypi_username
-password:your_pypi_password
-```
+   - Releases are published via [OIDC trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API tokens or credentials are needed.
+   - Request maintainer access by opening an issue or contacting the maintainer at 119843859+joschrag@users.noreply.github.com.
 
-2. **Changelogs and Version**
-- Check the recent commits and PRs and add anything notable to the `CHANGELOG.md` file
-- Bump the version number in `dash_auth/version.py`. Follow [Semantic Versioning 2.0.0](https://semver.org/)
-- Create a PR and tag @chriddyp for review
-- Once reviewed, merge into main.
+2. **Changelog and Version**
+   - Add a new entry to `CHANGELOG.md` summarising the changes.
+   - Bump the version in `pyproject.toml` and `dash_auth_async/version.py`. Follow [Semantic Versioning 2.0.0](https://semver.org/).
+   - Create a PR, get it reviewed, and merge into `main`.
 
-3. **Create a Python Build**
-```
-$ rm -rf dist build
-$ python setup.py sdist bdist_wheel
-```
+3. **Push a Git Tag**
+   The tag must match the version in `pyproject.toml` exactly (e.g. `v1.0.0`).
+   ```
+   git tag -a 'v1.0.0' -m 'v1.0.0'
+   git push origin main --follow-tags
+   ```
+   Pushing the tag triggers the release workflow, which builds the package with `uv build` and publishes it to PyPI automatically.
 
-4. **Upload the Build to PyPI**
-First, install twine: the new tool for uploading packages to PyPI
-```
-$ pip install twine
-```
-
-Then, upload to PyPI using Twine.
-```
-$ twine upload dist/*
-```
-
-5. **Git Tag**
-Create a Git Tag with the version number:
-```
-git tag -a 'v0.1.0' -m 'v0.1.0'
-git push origin main --follow-tags
-```
-
-6. **Test it out**
-In a new folder, make sure the installation uploaded correctly.
-Note that sometimes PyPI's servers take a few minutes for installations to be recognized.
-```
-pip install dash-auth --upgrade
-```
+4. **Verify**
+   Once the workflow completes, confirm the release at https://pypi.org/project/dash-auth-async/.
