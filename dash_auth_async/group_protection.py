@@ -4,8 +4,8 @@ from typing import Any, Callable, List, Literal, Optional, Union
 
 import dash
 from dash.exceptions import PreventUpdate
-from flask import session, has_request_context
 
+from .backends import get_active_backend
 
 OutputVal = Union[Callable[[], Any], Any]
 CheckType = Literal["one_of", "all_of", "none_of"]
@@ -18,17 +18,18 @@ def list_groups(
 ) -> Optional[List[str]]:
     """List all the groups the user belongs to.
 
-    :param groups_key: Groups key in the user data saved in the Flask session
+    :param groups_key: Groups key in the user data saved in the backend session
         e.g. session["user"] == {"email": "a.b@mail.com", "groups": ["admin"]}
     :param groups_str_split: Used to split groups if provided as a string
     :return: None or list[str]:
         * None if the user is not authenticated
         * list[str] otherwise
     """
-    if not has_request_context() or "user" not in session:
+    backend = get_active_backend()
+    if not backend.has_request_context() or "user" not in backend.session:
         return None
 
-    user_groups = session.get("user", {}).get(groups_key, [])
+    user_groups = backend.session.get("user", {}).get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
     # may depend on OIDC provider
     if isinstance(user_groups, str) and groups_str_split is not None:
@@ -47,7 +48,7 @@ def check_groups(
     and has the specified groups.
 
     :param groups: List of groups to check for with check_type
-    :param groups_key: Groups key in the user data saved in the Flask session
+    :param groups_key: Groups key in the user data saved in the backend session
         e.g. session["user"] == {"email": "a.b@mail.com", "groups": ["admin"]}
     :param groups_str_split: Used to split groups if provided as a string
     :param check_type: Type of check to perform.
@@ -164,7 +165,7 @@ def protected_callback(
         If left as None, it will simply raise PreventUpdate, stopping the
         callback from processing.
     :param groups: List of authorized user groups
-    :param groups_key: Groups key in the user data saved in the Flask session
+    :param groups_key: Groups key in the user data saved in the backend session
         e.g. session["user"] == {"email": "a.b@mail.com", "groups": ["admin"]}
     :param groups_str_split: Used to split groups if provided as a string
     :param check_type: Type of check to perform.
@@ -182,7 +183,7 @@ def protected_callback(
         def prevent_unauthorised():
             logging.info(
                 "%s tried to run %s but did not have the right permissions.",
-                session["user"]["email"],
+                get_active_backend().session["user"]["email"],
                 func.__name__,
             )
             raise PreventUpdate
