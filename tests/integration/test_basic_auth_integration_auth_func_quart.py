@@ -108,9 +108,7 @@ def both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs):
 )
 def test_ba003_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
     with pytest.raises(ValueError):
-        both_dict_and_func(dash_br, dash_thread_server, backend="quart", **kwargs)
+        both_dict_and_func(dash_br, dash_thread_server, **kwargs)
     with pytest.raises(ValueError):
-        both_no_auth_func_or_dict(
-            dash_br, dash_thread_server, backend="quart", **kwargs
-        )
+        both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs)
     return
