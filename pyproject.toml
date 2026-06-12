@@ -58,10 +58,20 @@ include = ["dash_auth_async*"]
 dev = [
     "creosote>=5.2.0",
     "dash[testing]>=2",
+    "setuptools",
     "ty",
     "pre-commit>=3.5.0",
     "pytest>=8.3.5",
     "ruff>=0.15.16",
+]
+
+[tool.uv]
+constraint-dependencies = [
+    "setuptools<80",
+]
+override-dependencies = [
+    "urllib3>=2.7.0",
+    "selenium>=4.6.0",
 ]
 
 [tool.creosote]
