@@ -20,7 +20,8 @@ def _stop_quart_gracefully(runner) -> bool:
     Returns True if the server thread exited; False means fall back to
     the original kill-based stop.
     """
-    backend_server = getattr(runner._app, "backend", None)
+    # dash<4.2.0 ThreadedRunner has no _app attribute (and no quart backend).
+    backend_server = getattr(getattr(runner, "_app", None), "backend", None)
     event = getattr(backend_server, "_ws_shutdown_event", None)
     if event is None:
         return False
