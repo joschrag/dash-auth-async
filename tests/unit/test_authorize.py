@@ -31,6 +31,12 @@ class FakeBackend(Backend):
     def register_auth_hook(self, server, needs_body, decide) -> None:
         self.registered_hook = (needs_body, decide)
 
+    def url_for(self, endpoint: str, **values) -> str:
+        return f"/{endpoint}"
+
+    def redirect(self, location: str):
+        return ("redirect", location)
+
 
 class StubAuth(Auth):
     def __init__(self, app, authorized=False, public_routes=None):

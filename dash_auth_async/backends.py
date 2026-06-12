@@ -7,7 +7,7 @@ from typing import Any, Callable, MutableMapping, Optional
 import flask
 
 try:
-    import quart  # type: ignore
+    import quart
 
     HAS_QUART = True
 except ImportError:
@@ -47,6 +47,12 @@ class Backend(ABC):
             or a response value to short-circuit it
         """
 
+    @abstractmethod
+    def url_for(self, endpoint: str, **values) -> str: ...
+
+    @abstractmethod
+    def redirect(self, location: str) -> Any: ...
+
 
 class FlaskBackend(Backend):
     # Properties, not class attributes: ABCMeta probes every namespace
@@ -72,6 +78,12 @@ class FlaskBackend(Backend):
                 else None
             )
             return decide(flask.request.path, body)
+
+    def url_for(self, endpoint: str, **values) -> str:
+        return flask.url_for(endpoint, **values)
+
+    def redirect(self, location: str) -> Any:
+        return flask.redirect(location)
 
 
 class QuartBackend(Backend):
@@ -105,6 +117,12 @@ class QuartBackend(Backend):
             if inspect.isawaitable(result):
                 return await result
             return result
+
+    def url_for(self, endpoint: str, **values) -> str:
+        return quart.url_for(endpoint, **values)
+
+    def redirect(self, location: str) -> Any:
+        return quart.redirect(location)
 
 
 def detect_backend(server: Any) -> Backend:

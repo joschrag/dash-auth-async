@@ -6,8 +6,8 @@ pytest.importorskip("quart", reason="Quart extra dependencies are not installed"
 
 
 def test_gp004_list_groups_quart():
-    from quart import Quart  # type: ignore
-    from quart import session as quart_session  # type: ignore
+    from quart import Quart
+    from quart import session as quart_session
 
     from dash_auth_async.backends import QuartBackend, set_active_backend
 
@@ -15,7 +15,9 @@ def test_gp004_list_groups_quart():
     app.secret_key = "Test!"
 
     async def run():
-        async with app.test_request_context("/", method="GET"):
+        # quart annotates __aexit__ args without Optional, violating the
+        # protocol on clean exit; works at runtime.
+        async with app.test_request_context("/", method="GET"):  # ty: ignore[invalid-context-manager]
             quart_session["user"] = {"email": "a.b@mail.com", "groups": ["default"]}
             set_active_backend(QuartBackend())
             assert list_groups() == ["default"]
