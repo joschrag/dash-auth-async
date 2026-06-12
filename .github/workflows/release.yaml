@@ -2,20 +2,49 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
+  check:
+    name: Check if new version
+    runs-on: ubuntu-latest
+    outputs:
+      new: ${{ steps.version-check.outputs.new }}
+      tag: ${{ steps.version-check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Check if version is new
+        id: version-check
+        run: |
+          PKG=$(uv version --short)
+          TAG="v${PKG}"
+          if git tag | grep -qx "$TAG"; then
+            echo "Version $TAG already tagged, skipping release"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
   pypi-publish:
-    name: Upload release to PyPI
+    name: Tag and upload release to PyPI
+    needs: check
+    if: needs.check.outputs.new == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/dash-auth-async/
     permissions:
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -24,22 +53,10 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Check tag is on main
+      - name: Create and push tag
         run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor HEAD origin/main; then
-            echo "error: tagged commit is not on main branch"
-            exit 1
-          fi
-
-      - name: Check tag matches pyproject.toml version
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          PKG=$(uv version --short)
-          if [ "$TAG" != "$PKG" ]; then
-            echo "error: tag $GITHUB_REF_NAME does not match pyproject.toml version $PKG"
-            exit 1
-          fi
+          git tag "${{ needs.check.outputs.tag }}"
+          git push origin "${{ needs.check.outputs.tag }}"
 
       - name: Build
         run: uv build
