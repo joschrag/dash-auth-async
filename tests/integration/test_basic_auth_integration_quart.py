@@ -3,12 +3,15 @@ import requests
 import pytest
 from dash_auth_async import BasicAuth, add_public_routes, protected
 
+pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
+
 TEST_USERS = {
     "valid": [["hello", "world"], ["hello2", "wo:rld"]],
     "invalid": [["hello", "password"]],
 }
 
 
+@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -70,6 +73,7 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwarg
         dash_br.wait_for_text_to_equal("#output", "initial value")
 
 
+@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [

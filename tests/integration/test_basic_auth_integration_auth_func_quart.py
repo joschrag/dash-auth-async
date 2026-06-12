@@ -4,6 +4,8 @@ import pytest
 
 from dash_auth_async import basic_auth
 
+pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
+
 TEST_USERS = {
     "valid": [["hello", "world"], ["hello2", "wo:rld"]],
     "invalid": [["hello", "password"]],
@@ -18,6 +20,7 @@ def auth_function(username, password):
         return False
 
 
+@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -92,6 +95,7 @@ def both_no_auth_func_or_dict(dash_br, dash_thread_server, backend, **kwargs):
     return True
 
 
+@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [

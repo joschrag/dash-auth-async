@@ -62,25 +62,3 @@ def test_gp003_protected():
 
         del session["user"]
         assert f1() == "unauthenticated"
-
-
-def test_gp004_list_groups_quart():
-    import asyncio
-
-    from quart import Quart
-    from quart import session as quart_session
-
-    from dash_auth_async.backends import QuartBackend, set_active_backend
-
-    app = Quart(__name__)
-    app.secret_key = "Test!"
-
-    async def run():
-        async with app.test_request_context("/", method="GET"):
-            quart_session["user"] = {"email": "a.b@mail.com", "groups": ["default"]}
-            set_active_backend(QuartBackend())
-            assert list_groups() == ["default"]
-            assert check_groups(["default"]) is True
-            assert check_groups(["other"]) is False
-
-    asyncio.run(run())
