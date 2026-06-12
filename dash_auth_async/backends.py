@@ -1,13 +1,17 @@
+from __future__ import annotations
+
+import inspect
 from abc import ABC, abstractmethod
 from typing import Any, Callable, MutableMapping, Optional
 
 import flask
 
 try:
-    import quart
+    import quart  # type: ignore
 
     HAS_QUART = True
 except ImportError:
+    quart: Any = None
     HAS_QUART = False
 
 
@@ -71,11 +75,11 @@ class FlaskBackend(Backend):
 
 
 class QuartBackend(Backend):
-    def __init__(self):
-        if not HAS_QUART:
+    def __init__(self) -> None:
+        if quart is None:
             raise ImportError(
-                "Quart support requires the [quart] extra dependency. "
-                "Install it via: pip install dash-auth-async[quart]"
+                "Quart is not installed. Please install it with `pip install quart` "
+                "or `pip install dash[quart]` to use the Quart backend."
             )
 
     @property
@@ -97,14 +101,25 @@ class QuartBackend(Backend):
                 if needs_body(quart.request.path)
                 else None
             )
-            return decide(quart.request.path, body)
+            result = decide(quart.request.path, body)
+            if inspect.isawaitable(result):
+                return await result
+            return result
 
 
-def detect_backend(server) -> Backend:
+def detect_backend(server: Any) -> Backend:
     """Return the matching backend for a Flask or Quart server."""
-    if HAS_QUART and isinstance(server, quart.Quart):
-        return QuartBackend()
-    return FlaskBackend()
+    if quart is not None:
+        if isinstance(server, quart.Quart):
+            return QuartBackend()
+    if isinstance(server, flask.Flask):
+        return FlaskBackend()
+
+    raise NotImplementedError(
+        f"No backend implemented for server type {type(server)}. "
+        "If you are using a custom server, please provide a custom Backend "
+        "instance to Auth(..., backend=MyBackend())."
+    )
 
 
 # One backend per process, matching how Dash apps are deployed.
