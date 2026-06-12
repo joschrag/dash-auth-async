@@ -2,7 +2,13 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, MutableMapping, Optional
 
 import flask
-import quart
+
+try:
+    import quart
+
+    HAS_QUART = True
+except ImportError:
+    HAS_QUART = False
 
 
 class Backend(ABC):
@@ -65,6 +71,13 @@ class FlaskBackend(Backend):
 
 
 class QuartBackend(Backend):
+    def __init__(self):
+        if not HAS_QUART:
+            raise ImportError(
+                "Quart support requires the [quart] extra dependency. "
+                "Install it via: pip install dash-auth-async[quart]"
+            )
+
     @property
     def request(self) -> Any:
         return quart.request
@@ -89,7 +102,7 @@ class QuartBackend(Backend):
 
 def detect_backend(server) -> Backend:
     """Return the matching backend for a Flask or Quart server."""
-    if isinstance(server, quart.Quart):
+    if HAS_QUART and isinstance(server, quart.Quart):
         return QuartBackend()
     return FlaskBackend()
 

@@ -10,6 +10,7 @@ from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 from flask import Response, redirect, request, session, url_for
 from werkzeug.routing import Map, Rule
+from .backends import QuartBackend, detect_backend
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
@@ -93,6 +94,8 @@ class OIDCAuth(Auth):
         Exception
             Raise an exception if the app.server.secret_key is not defined
         """
+        if isinstance(detect_backend(app.server), QuartBackend):
+            raise NotImplementedError("OIDCAuth only supports Flask servers...")
         super().__init__(app, public_routes=public_routes)
 
         if isinstance(force_https_callback, str):
