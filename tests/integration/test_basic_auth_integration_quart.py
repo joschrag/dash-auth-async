@@ -11,7 +11,6 @@ TEST_USERS = {
 }
 
 
-@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -24,8 +23,8 @@ TEST_USERS = {
         },
     ],
 )
-def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwargs):
-    app = Dash(__name__, backend=backend, **kwargs)
+def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, backend="quart", **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )
@@ -73,7 +72,6 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwarg
         dash_br.wait_for_text_to_equal("#output", "initial value")
 
 
-@pytest.mark.parametrize("backend", ["quart"])
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -86,8 +84,8 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwarg
         },
     ],
 )
-def test_ba002_basic_auth_groups(dash_br, dash_thread_server, backend, kwargs):
-    app = Dash(__name__, backend=backend, **kwargs)
+def test_ba002_basic_auth_groups(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, backend="quart", **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )

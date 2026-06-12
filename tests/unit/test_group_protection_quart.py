@@ -6,8 +6,8 @@ pytest.importorskip("quart", reason="Quart extra dependencies are not installed"
 
 
 def test_gp004_list_groups_quart():
-    from quart import Quart
-    from quart import session as quart_session
+    from quart import Quart  # type: ignore
+    from quart import session as quart_session  # type: ignore
 
     from dash_auth_async.backends import QuartBackend, set_active_backend
 

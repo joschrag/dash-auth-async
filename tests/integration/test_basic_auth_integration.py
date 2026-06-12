@@ -21,8 +21,8 @@ TEST_USERS = {
         },
     ],
 )
-def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwargs):
-    app = Dash(__name__, backend=backend, **kwargs)
+def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )
@@ -82,8 +82,8 @@ def test_ba001_basic_auth_login_flow(dash_br, dash_thread_server, backend, kwarg
         },
     ],
 )
-def test_ba002_basic_auth_groups(dash_br, dash_thread_server, backend, kwargs):
-    app = Dash(__name__, backend=backend, **kwargs)
+def test_ba002_basic_auth_groups(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )

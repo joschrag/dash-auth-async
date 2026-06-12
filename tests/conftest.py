@@ -1,4 +1,5 @@
 import pytest
+from typing import Any
 
 import dash.testing.application_runners as _runners
 
@@ -21,6 +22,8 @@ def _stop_quart_gracefully(runner) -> bool:
     """
     backend_server = getattr(runner._app, "backend", None)
     event = getattr(backend_server, "_ws_shutdown_event", None)
+    if event is None:
+        return False
     # The asyncio.Event binds its loop on first await (in shutdown_trigger),
     # so its private _loop is the hypercorn loop in the server thread.
     loop = getattr(event, "_loop", None)
@@ -28,7 +31,7 @@ def _stop_quart_gracefully(runner) -> bool:
         return False
     try:
         loop.call_soon_threadsafe(event.set)
-    except RuntimeError:
+    except (RuntimeError, AttributeError):
         return False
     runner.thread.join(timeout=runner.stop_timeout)
     return not runner.thread.is_alive()
@@ -37,15 +40,15 @@ def _stop_quart_gracefully(runner) -> bool:
 _original_stop = _runners.ThreadedRunner.stop
 
 
-def _stop_with_graceful_quart(self):
+def _stop_with_graceful_quart(self: Any) -> Any:
     if _stop_quart_gracefully(self):
         self._app = None
         self.started = False
         return
-    _original_stop(self)
+    return _original_stop(self)
 
 
-_runners.ThreadedRunner.stop = _stop_with_graceful_quart
+_runners.ThreadedRunner.stop = _stop_with_graceful_quart  # type: ignore
 
 
 @pytest.fixture(autouse=True)
