@@ -21,5 +21,4 @@ repos:
         entry: uv run ty check
         language: system
         types: [python]
-        pass_filenames: false
-        args: [dash_auth_async]
+        pass_filenames: true
