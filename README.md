@@ -1,5 +1,14 @@
 ## Dash Authorization and Login
 
+![Lint](https://github.com/joschrag/dash-auth-async/actions/workflows/lint.yml/badge.svg)
+![Typecheck](https://github.com/joschrag/dash-auth-async/actions/workflows/typecheck.yml/badge.svg)
+[![codecov](https://codecov.io/gh/joschrag/dash-auth-async/branch/main/graph/badge.svg)](https://codecov.io/gh/joschrag/dash-auth-async)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![ty](https://img.shields.io/badge/type--checked-ty-blue)](https://github.com/astral-sh/ty)
+[![PyPI](https://img.shields.io/pypi/v/dash-auth-async)](https://pypi.org/project/dash-auth-async/)
+![Python](https://img.shields.io/pypi/pyversions/dash-auth-async)
+![License](https://img.shields.io/pypi/l/dash-auth-async)
+
 Maintained by [joschrag](https://github.com/joschrag/). Forked from [plotly/dash-auth](https://github.com/plotly/dash-auth) with the goal to add support for the new 4.x dash backends.
 
 License: MIT
