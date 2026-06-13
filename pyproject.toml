@@ -47,7 +47,7 @@ dependencies = [
 [project.optional-dependencies]
 oidc = ["authlib"]
 fastapi = ["dash[fastapi]>=4.2.0"]
-quart = ["dash[quart]>=4.2.0"]
+quart = ["dash[quart]>=4.2.0","httpx>=0.23.0"]
 
 [project.urls]
 Homepage = "https://github.com/joschrag/dash-auth-async"
