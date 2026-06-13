@@ -28,7 +28,7 @@ from authlib.integrations.base_client.async_openid import AsyncOpenIDMixin
 from werkzeug.local import LocalProxy
 
 try:
-    import quart  # type: ignore
+    import quart
     from authlib.integrations.httpx_client import AsyncOAuth2Client
 except ImportError as exc:  # pragma: no cover - exercised only on broken installs
     raise ImportError(
