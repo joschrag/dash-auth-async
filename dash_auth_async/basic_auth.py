@@ -1,7 +1,6 @@
 import base64
 import logging
 from typing import Dict, List, Optional, Union, Callable, cast
-import flask
 from dash import Dash
 
 from .auth import Auth
@@ -77,7 +76,7 @@ class BasicAuth(Auth):
                 )
 
     def is_authorized(self):
-        header = flask.request.headers.get("Authorization", None)
+        header = self.request.headers.get("Authorization", None)
         if not header:
             return False
         username_password = base64.b64decode(header.split("Basic ")[1])
@@ -94,20 +93,20 @@ class BasicAuth(Auth):
             authorized = self._users.get(username) == password
         if authorized:
             try:
-                flask.session["user"] = {"email": username, "groups": []}
+                self.session["user"] = {"email": username, "groups": []}
                 if self._user_groups_dict is not None:
-                    flask.session["user"]["groups"] = self._user_groups_dict.get(
+                    self.session["user"]["groups"] = self._user_groups_dict.get(
                         username, []
                     )
                 elif self._user_groups_func is not None:
-                    flask.session["user"]["groups"] = self._user_groups_func(username)
+                    self.session["user"]["groups"] = self._user_groups_func(username)
             except RuntimeError:
                 logging.warning("Session is not available. Have you set a secret key?")
         return authorized
 
     def login_request(self):
-        return flask.Response(
+        return (
             "Login Required",
-            headers={"WWW-Authenticate": 'Basic realm="User Visible Realm"'},
-            status=401,
+            401,
+            {"WWW-Authenticate": 'Basic realm="User Visible Realm"'},
         )

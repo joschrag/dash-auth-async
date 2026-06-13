@@ -18,8 +18,20 @@ def auth_function(username, password):
         return False
 
 
-def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server):
-    app = Dash(__name__)
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"url_base_pathname": "/sub/app/"},
+        {
+            "routes_pathname_prefix": "/app/",
+            "requests_pathname_prefix": "/app/",
+        },
+    ],
+)
+def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )
@@ -31,7 +43,12 @@ def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server):
     basic_auth.BasicAuth(app, auth_func=auth_function)
 
     dash_thread_server(app)
-    base_url = dash_thread_server.url
+    path_prefix = (
+        app.config.get("url_base_pathname", "")
+        or app.config.get("requests_pathname_prefix", "")
+        or app.config.get("routes_pathname_prefix", "")
+    )
+    base_url = dash_thread_server.url + path_prefix
 
     def test_failed_views(url):
         assert requests.get(url).status_code == 401
@@ -56,8 +73,8 @@ def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server):
 
 
 # Test incorrect initialization of BasicAuth
-def both_dict_and_func(dash_br, dash_thread_server):
-    app = Dash(__name__)
+def both_dict_and_func(dash_br, dash_thread_server, **kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )
@@ -66,8 +83,8 @@ def both_dict_and_func(dash_br, dash_thread_server):
     return True
 
 
-def both_no_auth_func_or_dict(dash_br, dash_thread_server):
-    app = Dash(__name__)
+def both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs):
+    app = Dash(__name__, **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
     )
@@ -75,9 +92,21 @@ def both_no_auth_func_or_dict(dash_br, dash_thread_server):
     return True
 
 
-def test_ba003_basic_auth_login_flow(dash_br, dash_thread_server):
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"url_base_pathname": "/app/"},
+        {"url_base_pathname": "/sub/app/"},
+        {
+            "routes_pathname_prefix": "/app/",
+            "requests_pathname_prefix": "/app/",
+        },
+    ],
+)
+def test_ba003_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
     with pytest.raises(ValueError):
-        both_dict_and_func(dash_br, dash_thread_server)
+        both_dict_and_func(dash_br, dash_thread_server, **kwargs)
     with pytest.raises(ValueError):
-        both_no_auth_func_or_dict(dash_br, dash_thread_server)
+        both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs)
     return

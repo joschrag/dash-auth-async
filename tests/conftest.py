@@ -1,0 +1,79 @@
+import pytest
+from typing import Any
+
+import dash.testing.application_runners as _runners
+
+import dash_auth_async.backends as backends
+
+
+def _stop_quart_gracefully(runner) -> bool:
+    """Shut down a quart-backend dash test server via its own shutdown event.
+
+    ThreadedRunner.stop() kills server threads with an async SystemExit,
+    which abandons hypercorn's connections mid-flight; on Windows the
+    proactor loop's close() then waits forever for the orphaned overlapped
+    I/O and pytest hangs in teardown (browser stays open). Dash's Quart
+    backend has a graceful path - serve(shutdown_trigger=...) awaits
+    backend._ws_shutdown_event - but only the main-thread signal handler
+    ever sets it. Set it here, thread-safely, on the server's own loop.
+
+    Returns True if the server thread exited; False means fall back to
+    the original kill-based stop.
+    """
+    # dash<4.2.0 ThreadedRunner has no _app attribute (and no quart backend).
+    backend_server = getattr(getattr(runner, "_app", None), "backend", None)
+    event = getattr(backend_server, "_ws_shutdown_event", None)
+    if event is None:
+        return False
+    # The asyncio.Event binds its loop on first await (in shutdown_trigger),
+    # so its private _loop is the hypercorn loop in the server thread.
+    loop = getattr(event, "_loop", None)
+    if loop is None or loop.is_closed():
+        return False
+    try:
+        loop.call_soon_threadsafe(event.set)
+    except (RuntimeError, AttributeError):
+        return False
+    runner.thread.join(timeout=runner.stop_timeout)
+    return not runner.thread.is_alive()
+
+
+_original_init = _runners.BaseDashRunner.__init__
+
+
+def _init_with_ipv4_host(
+    self: Any, keep_open, stop_timeout, scheme="http", host="127.0.0.1"
+) -> None:
+    """Build server URLs from 127.0.0.1 instead of localhost.
+
+    The dash servers bind to 127.0.0.1 (IPv4) only, but the runners
+    default to host="localhost". On Windows, localhost resolves to ::1
+    first and each fresh connection waits ~2s for the IPv6 attempt to
+    time out before falling back to IPv4 - a flat 2s tax on every
+    requests.get/startup poll, which dominated the suite's runtime.
+    """
+    _original_init(self, keep_open, stop_timeout, scheme=scheme, host=host)
+
+
+_runners.BaseDashRunner.__init__ = _init_with_ipv4_host  # type: ignore
+
+
+_original_stop = _runners.ThreadedRunner.stop
+
+
+def _stop_with_graceful_quart(self: Any) -> Any:
+    if _stop_quart_gracefully(self):
+        self._app = None
+        self.started = False
+        return
+    return _original_stop(self)
+
+
+_runners.ThreadedRunner.stop = _stop_with_graceful_quart  # type: ignore
+
+
+@pytest.fixture(autouse=True)
+def reset_active_backend():
+    """Keep the module-level active backend from leaking between tests."""
+    yield
+    backends._active_backend = None
