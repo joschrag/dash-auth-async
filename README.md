@@ -247,6 +247,62 @@ if __name__ == "__main__":
     app.run(debug=True)
 ```
 
+### Quart (async) Backend
+
+`dash-auth-async` supports [Dash's Quart backend](https://dash.plotly.com/) for fully async request handling.
+Install the `quart` extra to pull in the required dependencies:
+
+```
+pip install dash-auth-async[quart]
+```
+
+Then pass `backend="quart"` when creating your Dash app. The auth setup is identical
+to the Flask examples above — no code changes required beyond the backend flag.
+
+#### BasicAuth with Quart
+
+```python
+from dash import Dash
+from dash_auth_async import BasicAuth
+
+app = Dash(__name__, backend="quart")
+
+BasicAuth(app, {"admin": "admin", "viewer": "viewer123"})
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8050, debug=True)
+```
+
+#### OIDCAuth with Quart
+
+```python
+import os
+from dash import Dash, html
+from dash_auth_async import OIDCAuth
+
+app = Dash(__name__, backend="quart")
+
+app.layout = html.Div([
+    html.H2("OIDCAuth + Quart"),
+    html.A("Logout", href="/oidc/logout"),
+])
+
+auth = OIDCAuth(app, secret_key="aStaticSecretKey!")
+auth.register_provider(
+    "myidp",
+    client_id=os.environ["OIDC_CLIENT_ID"],
+    client_secret=os.environ["OIDC_CLIENT_SECRET"],
+    server_metadata_url=os.environ["OIDC_METADATA_URL"],
+    token_endpoint_auth_method="client_secret_post",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8050, debug=True)
+```
+
+> **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.10.
+
 ### User-group-based permissions
 
 `dash_auth_async` provides a convenient way to secure parts of your app based on user groups.
