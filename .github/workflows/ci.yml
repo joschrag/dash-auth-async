@@ -16,7 +16,10 @@ jobs:
           python-version: "3.13"
 
       - name: Sync dev dependencies
-        run: uv sync --group dev
+        # Install the optional extras (quart/fastapi/oidc) so `ty check`
+        # can resolve those imports instead of failing on unresolved
+        # modules in the quart-only code paths.
+        run: uv sync --group dev --all-extras
 
       - name: Ruff
         run: |
