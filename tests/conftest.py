@@ -38,6 +38,26 @@ def _stop_quart_gracefully(runner) -> bool:
     return not runner.thread.is_alive()
 
 
+_original_init = _runners.BaseDashRunner.__init__
+
+
+def _init_with_ipv4_host(
+    self: Any, keep_open, stop_timeout, scheme="http", host="127.0.0.1"
+) -> None:
+    """Build server URLs from 127.0.0.1 instead of localhost.
+
+    The dash servers bind to 127.0.0.1 (IPv4) only, but the runners
+    default to host="localhost". On Windows, localhost resolves to ::1
+    first and each fresh connection waits ~2s for the IPv6 attempt to
+    time out before falling back to IPv4 - a flat 2s tax on every
+    requests.get/startup poll, which dominated the suite's runtime.
+    """
+    _original_init(self, keep_open, stop_timeout, scheme=scheme, host=host)
+
+
+_runners.BaseDashRunner.__init__ = _init_with_ipv4_host  # type: ignore
+
+
 _original_stop = _runners.ThreadedRunner.stop
 
 
