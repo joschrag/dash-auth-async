@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-13
+
+### Added
+- Async Quart backend support for both `BasicAuth` and `OIDCAuth` — use `Dash(__name__, backend="quart")` to run on the async Quart server
+- `quart_client` module: Quart-native OAuth integration built on authlib's async mixins (`AsyncOAuth2Mixin`, `AsyncOpenIDMixin`)
+- Backend abstraction layer (`FlaskBackend`, `QuartBackend`) with automatic detection via `detect_backend()`
+- `httpx` dependency added to the `quart` optional extra for async HTTP in the OAuth flow
+- CI matrix splits for testing Dash 4.x with and without async backends
+
+### Changed
+- `OIDCAuth` internals refactored to use framework-agnostic `backend.url_for()` and `backend.redirect()` instead of importing Flask directly
+
+### Fixed
+- Handle `TestRunner` lacking `_app` attribute on Dash < 4.2.0
+
 ## [1.0.0] - 2026-06-11
 
 > First release as `dash-auth-async`, forked from [plotly/dash-auth](https://github.com/plotly/dash-auth) at v2.3.0.
