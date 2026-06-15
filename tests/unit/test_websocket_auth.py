@@ -8,8 +8,6 @@ import pytest
 from dash_auth_async import check_groups
 from dash_auth_async.websocket_auth import _ContextCopyingExecutor, _WS_AUTH_USER
 
-pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
-
 _probe: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "probe", default="DEFAULT"
 )
@@ -53,6 +51,7 @@ def test_plain_executor_does_not_propagate_contextvar():
 
 
 def _build_auth_app():
+    pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
     from dash import Dash, Input, Output, html
     from dash_auth_async import BasicAuth, public_callback
 
