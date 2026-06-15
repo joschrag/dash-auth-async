@@ -1,3 +1,5 @@
+import inspect
+import functools
 import logging
 import re
 from typing import Any, Callable, List, Literal, Optional, Union
@@ -9,6 +11,10 @@ from .backends import get_active_backend
 
 OutputVal = Union[Callable[[], Any], Any]
 CheckType = Literal["one_of", "all_of", "none_of"]
+
+# Sentinel: the gate authorises the call, so run the protected target rather
+# than substitute a fallback output (a fallback may legitimately be None/falsy).
+_PROCEED = object()
 
 
 def list_groups(
@@ -112,12 +118,13 @@ def protected(
         missing_permissions_output = unauthenticated_output
 
     def decorator(output: OutputVal):
-        def wrap(*args, **kwargs):
-            def process_output(output, *args, **kwargs):
-                if isinstance(output, Callable):
-                    return output(*args, **kwargs)
-                return output
+        def evaluate(value: OutputVal) -> Any:
+            # Fallback outputs are documented as no-argument callables or
+            # static values.
+            return value() if isinstance(value, Callable) else value
 
+        def gate() -> Any:
+            """Return _PROCEED when authorised, else the fallback output."""
             authorized = check_groups(
                 groups=groups,
                 groups_key=groups_key,
@@ -125,10 +132,33 @@ def protected(
                 check_type=check_type,
             )
             if authorized is None:
-                return process_output(unauthenticated_output)
-            if authorized:
-                return process_output(output, *args, **kwargs)
-            return process_output(missing_permissions_output)
+                return evaluate(unauthenticated_output)
+            if not authorized:
+                return evaluate(missing_permissions_output)
+            return _PROCEED
+
+        # An async target must stay a coroutine function so Dash registers it on
+        # its async dispatch path (dash _callback.py branches on
+        # asyncio.iscoroutinefunction at registration). Wrapping it in a plain
+        # def would erase that and the coroutine would never be awaited.
+        if isinstance(output, Callable) and inspect.iscoroutinefunction(output):
+
+            @functools.wraps(output)
+            async def awrap(*args, **kwargs):
+                fallback = gate()
+                if fallback is _PROCEED:
+                    return await output(*args, **kwargs)
+                return fallback
+
+            return awrap
+
+        def wrap(*args, **kwargs):
+            fallback = gate()
+            if fallback is not _PROCEED:
+                return fallback
+            if isinstance(output, Callable):
+                return output(*args, **kwargs)
+            return output
 
         if isinstance(output, Callable):
             return wrap
