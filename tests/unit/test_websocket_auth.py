@@ -3,8 +3,12 @@
 import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from dash_auth_async import check_groups
 from dash_auth_async.websocket_auth import _ContextCopyingExecutor, _WS_AUTH_USER
+
+pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
 
 _probe: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "probe", default="DEFAULT"
@@ -46,3 +50,40 @@ def test_plain_executor_does_not_propagate_contextvar():
             assert ex.submit(_probe.get).result() == "DEFAULT"
     finally:
         _probe.reset(token)
+
+
+def _build_auth_app():
+    from dash import Dash, Input, Output, html
+    from dash_auth_async import BasicAuth, public_callback
+
+    app = Dash(__name__, backend="quart")
+    app.layout = html.Div(
+        [html.Div(id="priv"), html.Div(id="pub"), html.Button("b", id="pub-in")]
+    )
+
+    @public_callback(Output("pub", "children"), Input("pub-in", "n_clicks"))
+    async def pub_cb(n):
+        return n
+
+    auth = BasicAuth(
+        app, {"hello": "world"}, user_groups={"hello": ["admin"]}, secret_key="Test!"
+    )
+    return app, auth
+
+
+def test_authorize_ws_allows_authenticated_user_for_private_callback():
+    _app, auth = _build_auth_app()
+    payload = {"output": "priv.children", "inputs": []}
+    assert auth.authorize_ws(payload, {"email": "x", "groups": []}) is True
+
+
+def test_authorize_ws_denies_unauthenticated_user_for_private_callback():
+    _app, auth = _build_auth_app()
+    payload = {"output": "priv.children", "inputs": []}
+    assert auth.authorize_ws(payload, None) is False
+
+
+def test_authorize_ws_allows_public_callback_even_unauthenticated():
+    _app, auth = _build_auth_app()
+    payload = {"output": "pub.children", "inputs": []}
+    assert auth.authorize_ws(payload, None) is True

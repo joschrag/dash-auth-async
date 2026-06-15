@@ -107,6 +107,38 @@ class Auth(ABC):
         # Otherwise, ask the user to log in
         return self.login_request()
 
+    def authorize_ws(self, payload: Optional[dict], user: Optional[dict]) -> bool:
+        """Decide whether a WebSocket callback_request may run.
+
+        Mirrors ``_authorize``'s public checks but, because there is no
+        ``request`` context over a WebSocket, treats the presence of an
+        authenticated session user as proof of login (the session cookie sent
+        at the handshake already proves it).
+
+        :param payload: the callback payload (same shape as the HTTP
+            ``_dash-update-component`` body: ``output``, ``inputs``, ...)
+        :param user: ``session["user"]`` or ``None``
+        :return: True to allow the callback, False to reject the connection
+        """
+        payload = payload or {}
+        public_callbacks = get_public_callbacks(self.app)
+        if payload.get("output") in public_callbacks:
+            return True
+
+        public_routes = get_public_routes(self.app)
+        pathname = next(
+            (
+                inp.get("value")
+                for inp in payload.get("inputs", [])
+                if isinstance(inp, dict) and inp.get("property") == "pathname"
+            ),
+            None,
+        )
+        if pathname and public_routes.test(pathname):
+            return True
+
+        return user is not None
+
     @abstractmethod
     def is_authorized(self):
         pass
