@@ -8,6 +8,7 @@ import dash
 from dash.exceptions import PreventUpdate
 
 from .backends import get_active_backend
+from .websocket_auth import _WS_AUTH_USER
 
 OutputVal = Union[Callable[[], Any], Any]
 CheckType = Literal["one_of", "all_of", "none_of"]
@@ -32,10 +33,19 @@ def list_groups(
         * list[str] otherwise
     """
     backend = get_active_backend()
-    if not backend.has_request_context() or "user" not in backend.session:
-        return None
+    if backend.has_request_context():
+        # Normal HTTP path: read the user from the framework session.
+        if "user" not in backend.session:
+            return None
+        user = backend.session["user"]
+    else:
+        # WebSocket worker path: no framework context here, so read the user
+        # the websocket_message hook stashed for this dispatch.
+        user = _WS_AUTH_USER.get()
+        if user is None:
+            return None
 
-    user_groups = backend.session.get("user", {}).get(groups_key, [])
+    user_groups = user.get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
     # may depend on OIDC provider
     if isinstance(user_groups, str) and groups_str_split is not None:
