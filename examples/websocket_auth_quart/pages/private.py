@@ -41,5 +41,4 @@ async def run_task(_n_clicks):
         set_props("task-bar", {"value": str(pct)})
         set_props("task-status", {"children": f"Working… {pct}%"})
         await asyncio.sleep(0.5)
-    set_props("task-bar", {"value": "100"})
     return "Complete!"
