@@ -39,7 +39,7 @@ jobs:
           pip install \
             "${{ matrix.dash-constraint }}" \
             -e "${{ matrix.extra-flags }}" \
-            pytest
+            pytest websocket-client
 
       - name: Test
         run: pytest --headless
@@ -62,7 +62,7 @@ jobs:
           pip install \
             "dash[testing]>=4.2.0" \
             -e ".[oidc,fastapi,quart]" \
-            pytest pytest-cov
+            pytest pytest-cov websocket-client
 
       - name: Test with coverage
         run: pytest --headless --cov=dash_auth_async --cov-report=xml

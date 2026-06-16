@@ -13,6 +13,26 @@ Maintained by [joschrag](https://github.com/joschrag/). Forked from [plotly/dash
 
 License: MIT
 
+## Feature overview
+
+How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-auth). The headline difference is async: upstream is Flask-only, while `dash-auth-async` adds the Quart backend and everything that rides on it (async callbacks, authenticated WebSocket callbacks) plus a pluggable backend abstraction.
+
+| Capability | `dash-auth` (upstream) | `dash-auth-async` |
+| --- | :---: | :---: |
+| Flask backend | ✅ | ✅ |
+| Quart backend | ❌ | ✅ |
+| FastAPI backend | ❌ | 🚧 <sup>1</sup> |
+| Custom backends | ❌ | ✅ <sup>2</sup> |
+| Protected / public callbacks | ✅ | ✅ |
+| Async callbacks | ❌ | ✅ <sup>3</sup> |
+| Authenticated WebSocket callbacks | ❌ | ✅ <sup>3</sup> |
+
+✅ supported · 🚧 on the roadmap · ❌ not supported
+
+<sup>1</sup> A `dash-auth-async[fastapi]` extra is declared and a native FastAPI backend is on the roadmap. In the meantime you can support it by implementing the `Backend` ABC and passing `Auth(..., backend=MyBackend())`.
+<sup>2</sup> `detect_backend` resolves Flask/Quart automatically; any other server is supported by supplying your own `Backend` instance.
+<sup>3</sup> Provided by the Quart backend. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+
 For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
 
 ```

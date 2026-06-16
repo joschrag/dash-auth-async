@@ -1,3 +1,5 @@
+import inspect
+import functools
 import logging
 import re
 from typing import Any, Callable, List, Literal, Optional, Union
@@ -6,9 +8,35 @@ import dash
 from dash.exceptions import PreventUpdate
 
 from .backends import get_active_backend
+from .websocket_auth import _WS_AUTH_USER
 
 OutputVal = Union[Callable[[], Any], Any]
 CheckType = Literal["one_of", "all_of", "none_of"]
+
+# Sentinel: the gate authorises the call, so run the protected target rather
+# than substitute a fallback output (a fallback may legitimately be None/falsy).
+_PROCEED = object()
+
+
+def _current_user() -> Optional[dict]:
+    """Resolve the authenticated user for the current dispatch.
+
+    Single source of truth for "who is calling": under an HTTP request context
+    this is the framework session user; on the WebSocket worker path (no
+    framework context) it is the user the websocket_message hook stashed in
+    ``_WS_AUTH_USER`` for this dispatch. Returns ``None`` when unauthenticated.
+
+    Every helper that needs the caller -- ``list_groups`` and the default
+    ``protected_callback`` fallbacks -- goes through here so none of them touch
+    ``backend.session`` directly (which raises ``RuntimeError`` off-request).
+    """
+    backend = get_active_backend()
+    if backend.has_request_context():
+        # Normal HTTP path: read the user from the framework session.
+        return backend.session.get("user")
+    # WebSocket worker path: no framework context here, so read the user the
+    # websocket_message hook stashed for this dispatch.
+    return _WS_AUTH_USER.get()
 
 
 def list_groups(
@@ -25,11 +53,11 @@ def list_groups(
         * None if the user is not authenticated
         * list[str] otherwise
     """
-    backend = get_active_backend()
-    if not backend.has_request_context() or "user" not in backend.session:
+    user = _current_user()
+    if user is None:
         return None
 
-    user_groups = backend.session.get("user", {}).get(groups_key, [])
+    user_groups = user.get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
     # may depend on OIDC provider
     if isinstance(user_groups, str) and groups_str_split is not None:
@@ -112,12 +140,13 @@ def protected(
         missing_permissions_output = unauthenticated_output
 
     def decorator(output: OutputVal):
-        def wrap(*args, **kwargs):
-            def process_output(output, *args, **kwargs):
-                if isinstance(output, Callable):
-                    return output(*args, **kwargs)
-                return output
+        def evaluate(value: OutputVal) -> Any:
+            # Fallback outputs are documented as no-argument callables or
+            # static values.
+            return value() if isinstance(value, Callable) else value
 
+        def gate() -> Any:
+            """Return _PROCEED when authorised, else the fallback output."""
             authorized = check_groups(
                 groups=groups,
                 groups_key=groups_key,
@@ -125,16 +154,64 @@ def protected(
                 check_type=check_type,
             )
             if authorized is None:
-                return process_output(unauthenticated_output)
-            if authorized:
-                return process_output(output, *args, **kwargs)
-            return process_output(missing_permissions_output)
+                return evaluate(unauthenticated_output)
+            if not authorized:
+                return evaluate(missing_permissions_output)
+            return _PROCEED
+
+        # An async target must stay a coroutine function so Dash registers it on
+        # its async dispatch path (dash _callback.py branches on
+        # asyncio.iscoroutinefunction at registration). Wrapping it in a plain
+        # def would erase that and the coroutine would never be awaited.
+        if isinstance(output, Callable) and inspect.iscoroutinefunction(output):
+
+            @functools.wraps(output)
+            async def awrap(*args, **kwargs):
+                fallback = gate()
+                if fallback is _PROCEED:
+                    return await output(*args, **kwargs)
+                return fallback
+
+            return awrap
+
+        def wrap(*args, **kwargs):
+            fallback = gate()
+            if fallback is not _PROCEED:
+                return fallback
+            if isinstance(output, Callable):
+                return output(*args, **kwargs)
+            return output
 
         if isinstance(output, Callable):
             return wrap
         return wrap()
 
     return decorator
+
+
+def _prevent_unauthenticated(func_name: str) -> None:
+    """Default ``unauthenticated_output``: log and stop the callback."""
+    logging.info(
+        "A user tried to run %s without being authenticated.",
+        func_name,
+    )
+    raise PreventUpdate
+
+
+def _prevent_unauthorised(func_name: str) -> None:
+    """Default ``missing_permissions_output``: log and stop the callback.
+
+    Resolves the caller via ``_current_user`` rather than touching
+    ``backend.session`` directly, so it stays graceful on the WebSocket worker
+    path (no request context) instead of raising ``RuntimeError``.
+    """
+    user = _current_user() or {}
+    logging.info(
+        "%s tried to run %s but did not have the right permissions.",
+        user.get("email", "<unknown user>"),
+        func_name,
+    )
+    raise PreventUpdate
 
 
 def protected_callback(
@@ -173,32 +250,17 @@ def protected_callback(
     """
 
     def decorator(func):
-        def prevent_unauthenticated():
-            logging.info(
-                "A user tried to run %s without being authenticated.",
-                func.__name__,
-            )
-            raise PreventUpdate
-
-        def prevent_unauthorised():
-            logging.info(
-                "%s tried to run %s but did not have the right permissions.",
-                get_active_backend().session["user"]["email"],
-                func.__name__,
-            )
-            raise PreventUpdate
-
         wrapped_func = dash.callback(*callback_args, **callback_kwargs)(
             protected(
                 unauthenticated_output=(
                     unauthenticated_output
                     if unauthenticated_output is not None
-                    else prevent_unauthenticated
+                    else functools.partial(_prevent_unauthenticated, func.__name__)
                 ),
                 missing_permissions_output=(
                     missing_permissions_output
                     if missing_permissions_output is not None
-                    else prevent_unauthorised
+                    else functools.partial(_prevent_unauthorised, func.__name__)
                 ),
                 groups=groups,
                 groups_key=groups_key,
