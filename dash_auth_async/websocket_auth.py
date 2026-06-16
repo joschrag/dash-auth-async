@@ -50,9 +50,9 @@ _hook_registered = False
 def _ws_message_hook(ws: Any, message: Any):
     """Global Dash websocket_message hook: authorize each callback_request.
 
-    Resolves the owning app via ``quart.current_app`` so it is correct when
-    several apps share the process; inert for apps that do not use
-    dash-auth-async.
+    The single fail-closed boundary for WebSocket auth: any unexpected error
+    while deciding rejects the socket. The decision itself lives in
+    ``_authorize_ws_message``.
 
     Returns:
         A truthy value to allow, or a ``(code, reason)`` tuple to reject
@@ -61,33 +61,46 @@ def _ws_message_hook(ws: Any, message: Any):
     if not isinstance(message, dict) or message.get("type") != "callback_request":
         return True
     try:
-        import quart  # noqa: PLC0415 — quart is an optional dependency
-
-        # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
-        # the real Quart app (the key in ``_AUTH_BY_SERVER``). The attribute is
-        # present at runtime but absent from the proxy's type stub, so go through
-        # ``getattr`` to keep the static type checker happy.
-        current_app: Any = quart.current_app
-        app = getattr(current_app, "_get_current_object")()
-        auth = _AUTH_BY_SERVER.get(app)
-        if auth is None:
-            # Not a dash-auth-async app: nothing to enforce. Safe because the
-            # registry entry is created by the developer's ``Auth(app, ...)``
-            # call, not by the client -- an attacker cannot evict their own app.
-            return True
-        payload = message.get("payload", {}) or {}
-        user = quart.session.get("user")
-        if auth.authorize_ws(payload, user):
-            # Load-bearing invariant: this hook runs before every callback_request
-            # is submitted to the executor, so the context-copying executor always
-            # snapshots the user set here -- a stale value from a prior message can
-            # never reach a worker. ``set`` (never ``reset``) is therefore safe.
-            _WS_AUTH_USER.set(user)
-            return True
-        return (4401, "Unauthorized")
+        return _authorize_ws_message(message)
     except Exception:  # pylint: disable=broad-exception-caught
         # Fail closed on any unexpected error.
         return (4401, "Unauthorized")
+
+
+def _authorize_ws_message(message: dict) -> bool | tuple[int, str]:
+    """Authorize one WebSocket ``callback_request`` for the current Quart app.
+
+    Resolves the owning app via ``quart.current_app`` so it is correct when
+    several apps share the process; inert for apps that do not use
+    dash-auth-async.
+
+    Returns:
+        ``True`` to allow, or a ``(code, reason)`` tuple to reject the socket.
+    """
+    import quart  # noqa: PLC0415 — quart is an optional dependency
+
+    # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
+    # the real Quart app (the key in ``_AUTH_BY_SERVER``). The attribute is
+    # present at runtime but absent from the proxy's type stub, so go through
+    # ``getattr`` to keep the static type checker happy.
+    current_app: Any = quart.current_app
+    app = getattr(current_app, "_get_current_object")()
+    auth = _AUTH_BY_SERVER.get(app)
+    if auth is None:
+        # Not a dash-auth-async app: nothing to enforce. Safe because the
+        # registry entry is created by the developer's ``Auth(app, ...)``
+        # call, not by the client -- an attacker cannot evict their own app.
+        return True
+    payload = message.get("payload", {}) or {}
+    user = quart.session.get("user")
+    if auth.authorize_ws(payload, user):
+        # Load-bearing invariant: this hook runs before every callback_request
+        # is submitted to the executor, so the context-copying executor always
+        # snapshots the user set here -- a stale value from a prior message can
+        # never reach a worker. ``set`` (never ``reset``) is therefore safe.
+        _WS_AUTH_USER.set(user)
+        return True
+    return (4401, "Unauthorized")
 
 
 def _ensure_hook_registered() -> None:
