@@ -8,13 +8,21 @@ still streams unauthenticated.
 import json
 
 import pytest
-import requests
-import websocket  # websocket-client (synchronous)
 from dash import Dash, Input, Output, callback, html
 
 from dash_auth_async import BasicAuth, protected_callback, public_callback
 
+# Guard the optional, non-extra test deps *before* importing them. CI test jobs
+# install the package extras (oidc/fastapi/quart) but not the `dev` group, so
+# websocket-client is absent there -- a bare top-level `import websocket` would
+# crash collection instead of skipping. quart is checked first so the non-async
+# matrix jobs skip cleanly without needing the socket client at all.
 pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
+requests = pytest.importorskip("requests", reason="requests is not installed")
+websocket = pytest.importorskip(  # websocket-client (synchronous)
+    "websocket",
+    reason="websocket-client (the 'websocket' module) is not installed",
+)
 
 
 def _build_app() -> Dash:
