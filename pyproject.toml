@@ -92,6 +92,21 @@ target-version = "py310"
 preview = true
 select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Tests are self-describing and have different idioms than library code:
+"tests/**" = [
+    "D",        # don't require docstrings on every test/fixture/module
+    "DOC",      # ...nor docstring sections (Returns, etc.)
+    "PLR2004",  # status-code literals (200/401/...) read clearer than named constants in asserts
+    "PLC0415",  # local imports are fine for optional deps and lazy fixtures
+    "PLC2701",  # tests legitimately import private names to exercise internals
+    "PLR6301",  # mock methods match a backend's instance interface; can't be static
+    "PLR0913",  # mocks/fixtures mirror real signatures, including wide ones
+    "PLR0917",  # ...same, for positional-argument count
+    "PERF203",  # try/except in a loop is irrelevant in test setup
+    "RUF029",   # async mocks intentionally match an awaited interface without awaiting
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
