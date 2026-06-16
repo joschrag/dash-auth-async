@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-16
+
+### Added
+- Authenticated WebSocket callbacks on the Quart backend: the global `websocket_message` hook authorizes every `callback_request` and fails closed, closing the prior unauthenticated-callback bypass
+- `Auth.authorize_ws()` — session-based authorization decision for WebSocket callbacks
+- `enable_ws_auth` and a context-copying executor that propagates the authenticated user into Dash's callback worker threads
+- Feature overview matrix in the README comparing `dash-auth-async` with upstream `dash-auth`
+
+### Fixed
+- `protected_callback` no longer strips async callbacks to plain functions, so coroutine callbacks stay async through protection and are awaited by Dash
+- Group gating resolves the caller via `_current_user`, so it fails closed over WebSocket where no request-context session is available
+
 ## [1.1.0] - 2026-06-13
 
 ### Added
