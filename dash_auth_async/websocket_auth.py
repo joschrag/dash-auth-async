@@ -69,10 +69,17 @@ def _ws_message_hook(ws: Any, message: Any):
         app = getattr(current_app, "_get_current_object")()
         auth = _AUTH_BY_SERVER.get(app)
         if auth is None:
-            return True  # not a dash-auth-async app
+            # Not a dash-auth-async app: nothing to enforce. Safe because the
+            # registry entry is created by the developer's ``Auth(app, ...)``
+            # call, not by the client -- an attacker cannot evict their own app.
+            return True
         payload = message.get("payload", {}) or {}
         user = quart.session.get("user")
         if auth.authorize_ws(payload, user):
+            # Load-bearing invariant: this hook runs before every callback_request
+            # is submitted to the executor, so the context-copying executor always
+            # snapshots the user set here -- a stale value from a prior message can
+            # never reach a worker. ``set`` (never ``reset``) is therefore safe.
             _WS_AUTH_USER.set(user)
             return True
         return (4401, "Unauthorized")
