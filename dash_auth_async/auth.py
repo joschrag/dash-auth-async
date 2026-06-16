@@ -11,6 +11,7 @@ from .public_routes import (
     get_public_routes,
     get_url_base,
 )
+from .websocket_auth import enable_ws_auth
 
 
 class Auth(ABC):
@@ -38,6 +39,7 @@ class Auth(ABC):
         self._protect()
         if public_routes is not None:
             add_public_routes(app, public_routes)
+        enable_ws_auth(self, app)
 
     @property
     def request(self):

@@ -9,9 +9,11 @@ upgrade to one file.
 from __future__ import annotations
 
 import contextvars
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
-from typing import Optional
+from typing import Any, Optional
+from weakref import WeakKeyDictionary
 
 # The authenticated user (session["user"] dict) for the callback currently being
 # dispatched over a WebSocket. Set by the websocket_message hook in the WS
@@ -37,3 +39,78 @@ class _ContextCopyingExecutor(ThreadPoolExecutor):
     def submit(self, fn, /, *args, **kwargs):
         ctx = contextvars.copy_context()
         return super().submit(lambda: ctx.run(fn, *args, **kwargs))
+
+
+# server (Quart/Flask app) -> Auth. Weak keys so test apps are collected.
+_AUTH_BY_SERVER: "WeakKeyDictionary[Any, Any]" = WeakKeyDictionary()
+
+_hook_lock = threading.Lock()
+_hook_registered = False
+
+
+def _ws_message_hook(ws: Any, message: Any):
+    """Global Dash websocket_message hook: authorize each callback_request.
+
+    Returns a truthy value to allow, or a ``(code, reason)`` tuple to reject
+    (which closes the socket). Resolves the owning app via ``quart.current_app``
+    so it is correct when several apps share the process; inert for apps that do
+    not use dash-auth-async.
+    """
+    if not isinstance(message, dict) or message.get("type") != "callback_request":
+        return True
+    try:
+        import quart
+
+        # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
+        # the real Quart app (the key in ``_AUTH_BY_SERVER``). The attribute is
+        # present at runtime but absent from the proxy's type stub, so go through
+        # ``getattr`` to keep the static type checker happy.
+        current_app: Any = quart.current_app
+        app = getattr(current_app, "_get_current_object")()
+        auth = _AUTH_BY_SERVER.get(app)
+        if auth is None:
+            return True  # not a dash-auth-async app
+        payload = message.get("payload", {}) or {}
+        user = quart.session.get("user")
+        if auth.authorize_ws(payload, user):
+            _WS_AUTH_USER.set(user)
+            return True
+        return (4401, "Unauthorized")
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Fail closed on any unexpected error.
+        return (4401, "Unauthorized")
+
+
+def _ensure_hook_registered() -> None:
+    """Register the global websocket_message hook exactly once per process."""
+    global _hook_registered
+    with _hook_lock:
+        if _hook_registered:
+            return
+        from dash import hooks
+
+        hooks.websocket_message()(_ws_message_hook)
+        _hook_registered = True
+
+
+def enable_ws_auth(auth: Any, app: Any) -> None:
+    """Wire WebSocket auth for a dash-auth-async app.
+
+    No-op on backends without WebSocket support (e.g. Flask). For WS-capable
+    backends it records the app->Auth mapping, installs the context-copying
+    executor (before any dispatch), and registers the global hook once.
+    """
+    backend = getattr(app, "backend", None)
+    if backend is None or not getattr(backend, "websocket_capability", False):
+        return
+
+    _AUTH_BY_SERVER[app.server] = auth
+
+    if not isinstance(
+        getattr(backend, "_callback_executor", None), _ContextCopyingExecutor
+    ):
+        backend._callback_executor = _ContextCopyingExecutor(
+            thread_name_prefix="dash-callback-"
+        )
+
+    _ensure_hook_registered()
