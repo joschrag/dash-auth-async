@@ -652,16 +652,16 @@ provides-extras = ["oidc", "fastapi", "quart", "async"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "asgiref" },
+    { name = "asgiref", specifier = ">=3.11.1" },
     { name = "creosote", specifier = ">=5.2.0" },
-    { name = "dash", extras = ["testing"], specifier = ">=2" },
+    { name = "dash", extras = ["testing"], specifier = ">=4.2.0" },
     { name = "pre-commit", specifier = ">=3.5.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.15.16" },
-    { name = "setuptools" },
-    { name = "ty" },
-    { name = "websocket-client" },
+    { name = "setuptools", specifier = ">=79.0.1" },
+    { name = "ty", specifier = ">=0.0.46" },
+    { name = "websocket-client", specifier = ">=1.9.0" },
 ]
 
 [[package]]

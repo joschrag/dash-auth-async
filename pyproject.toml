@@ -59,16 +59,16 @@ include = ["dash_auth_async*"]
 
 [dependency-groups]
 dev = [
-    "asgiref",
+    "asgiref>=3.11.1",
     "creosote>=5.2.0",
-    "dash[testing]>=2",
-    "setuptools",
-    "ty",
+    "dash[testing]>=4.2.0",
+    "setuptools>=79.0.1",
+    "ty>=0.0.46",
     "pre-commit>=3.5.0",
     "pytest>=8.3.5",
     "ruff>=0.15.16",
     "pytest-cov>=7.1.0",
-    "websocket-client",
+    "websocket-client>=1.9.0",
 ]
 
 [tool.uv]
