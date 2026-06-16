@@ -72,6 +72,9 @@ dev = [
 [tool.uv]
 constraint-dependencies = [
     "setuptools<80",
+    # GHSA: cryptography wheels < 48.0.1 bundle a vulnerable OpenSSL
+    # (advisory 2026-06-09). Pulled in transitively via authlib.
+    "cryptography>=48.0.1",
 ]
 override-dependencies = [
     "urllib3>=2.7.0",
