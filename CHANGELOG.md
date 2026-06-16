@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-06-17
+
+### Fixed
+- `BasicAuth` now returns a `401` login response instead of a `500` server error when the `Authorization` header is missing or malformed
+- `BasicAuth` password verification uses a constant-time comparison, removing a timing side channel during credential checks
+
 ## [1.2.0] - 2026-06-16
 
 ### Added
