@@ -5,8 +5,8 @@ import requests
 from dash import Dash, Input, Output, dcc, html
 
 from dash_auth_async import (
-    protected_callback,
     OIDCAuth,
+    protected_callback,
 )
 
 quart = pytest.importorskip(

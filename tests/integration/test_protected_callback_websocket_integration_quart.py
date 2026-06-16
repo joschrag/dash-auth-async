@@ -16,8 +16,8 @@ unauthorised user gets the fallback and the stream body never runs.
 import asyncio
 
 import dash
-from dash import Dash, Input, Output, html, set_props
 import pytest
+from dash import Dash, Input, Output, html, set_props
 
 from dash_auth_async import BasicAuth, protected_callback
 

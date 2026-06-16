@@ -1,6 +1,8 @@
-import pytest
 import asyncio
-from dash_auth_async import list_groups, check_groups
+
+import pytest
+
+from dash_auth_async import check_groups, list_groups
 
 pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
 

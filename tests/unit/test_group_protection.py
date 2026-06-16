@@ -1,5 +1,6 @@
-from dash_auth_async import list_groups, check_groups, protected
 from flask import Flask, session
+
+from dash_auth_async import check_groups, list_groups, protected
 
 
 def test_gp001_list_groups():

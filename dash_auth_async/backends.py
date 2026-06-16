@@ -1,8 +1,11 @@
+"""Framework adapters isolating Flask/Quart-specific request and session I/O."""
+
 from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from typing import Any, Callable, MutableMapping, Optional
+from collections.abc import Callable, MutableMapping
+from typing import Any
 
 import flask
 
@@ -35,7 +38,7 @@ class Backend(ABC):
         self,
         server,
         needs_body: Callable[[str], bool],
-        decide: Callable[[str, Optional[dict]], Any],
+        decide: Callable[[str, dict | None], Any],
     ) -> None:
         """Register a before-request auth hook on the server.
 
@@ -48,28 +51,52 @@ class Backend(ABC):
         """
 
     @abstractmethod
-    def url_for(self, endpoint: str, **values) -> str: ...
+    def url_for(self, endpoint: str, **values) -> str:
+        """Build a URL for the given endpoint on this backend."""
 
     @abstractmethod
-    def redirect(self, location: str) -> Any: ...
+    def redirect(self, location: str) -> Any:
+        """Return a redirect response to the given location."""
 
 
 class FlaskBackend(Backend):
+    """Backend adapter for a Flask server."""
+
     # Properties, not class attributes: ABCMeta probes every namespace
     # value for __isabstractmethod__ at class creation, which unwraps
     # the context-local proxies outside any request and raises.
     @property
     def request(self) -> Any:
+        """Flask's request context-local proxy.
+
+        Returns:
+            The Flask request proxy.
+        """
         return flask.request
 
     @property
     def session(self) -> MutableMapping:
+        """Flask's session mapping.
+
+        Returns:
+            The Flask session proxy.
+        """
         return flask.session
 
-    def has_request_context(self) -> bool:
+    # The methods below are thin adapters over module-level framework
+    # functions; they must stay instance methods to satisfy the Backend
+    # interface, so PLR6301 (no-self-use) is suppressed on each.
+    def has_request_context(self) -> bool:  # noqa: PLR6301
+        """Whether a Flask request context is currently active.
+
+        Returns:
+            True if a request context is active.
+        """
         return flask.has_request_context()
 
-    def register_auth_hook(self, server, needs_body, decide) -> None:
+    def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
+        """Register the before-request auth hook on a Flask server."""
+
         @server.before_request
         def before_request_auth():
             body = (
@@ -79,15 +106,32 @@ class FlaskBackend(Backend):
             )
             return decide(flask.request.path, body)
 
-    def url_for(self, endpoint: str, **values) -> str:
+    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
+        """Build a URL for a Flask endpoint.
+
+        Returns:
+            The URL string for ``endpoint``.
+        """
         return flask.url_for(endpoint, **values)
 
-    def redirect(self, location: str) -> Any:
+    def redirect(self, location: str) -> Any:  # noqa: PLR6301
+        """Build a Flask redirect response to ``location``.
+
+        Returns:
+            A Flask redirect response.
+        """
         return flask.redirect(location)
 
 
 class QuartBackend(Backend):
+    """Backend adapter for a Quart (async) server."""
+
     def __init__(self) -> None:
+        """Create the Quart backend, requiring the optional ``quart`` extra.
+
+        Raises:
+            ImportError: if Quart is not installed.
+        """
         if quart is None:
             raise ImportError(
                 "Quart is not installed. Please install it with `pip install quart` "
@@ -96,16 +140,40 @@ class QuartBackend(Backend):
 
     @property
     def request(self) -> Any:
+        """Quart's request context-local proxy.
+
+        Returns:
+            The Quart request proxy.
+        """
         return quart.request
 
     @property
     def session(self) -> MutableMapping:
+        """Quart's session mapping.
+
+        Returns:
+            The Quart session proxy.
+        """
         return quart.session
 
-    def has_request_context(self) -> bool:
+    # The methods below are thin adapters over module-level framework
+    # functions; they must stay instance methods to satisfy the Backend
+    # interface, so PLR6301 (no-self-use) is suppressed on each.
+    def has_request_context(self) -> bool:  # noqa: PLR6301
+        """Whether a Quart request context is currently active.
+
+        Returns:
+            True if a request context is active.
+        """
         return quart.has_request_context()
 
-    def register_auth_hook(self, server, needs_body, decide) -> None:
+    def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
+        """Register the before-request auth hook on a Quart server.
+
+        Awaits both the request body and the (possibly coroutine) decision so
+        async auth logic is preserved.
+        """
+
         @server.before_request
         async def before_request_auth():
             body = (
@@ -118,10 +186,20 @@ class QuartBackend(Backend):
                 return await result
             return result
 
-    def url_for(self, endpoint: str, **values) -> str:
+    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
+        """Build a URL for a Quart endpoint.
+
+        Returns:
+            The URL string for ``endpoint``.
+        """
         return quart.url_for(endpoint, **values)
 
-    def redirect(self, location: str) -> Any:
+    def redirect(self, location: str) -> Any:  # noqa: PLR6301
+        """Build a Quart redirect response to ``location``.
+
+        Returns:
+            A Quart redirect response.
+        """
         return quart.redirect(location)
 
 
@@ -141,7 +219,7 @@ def detect_backend(server: Any) -> Backend:
 
 
 # One backend per process, matching how Dash apps are deployed.
-_active_backend: Optional[Backend] = None
+_active_backend: Backend | None = None
 _DEFAULT_BACKEND = FlaskBackend()
 
 
@@ -151,7 +229,7 @@ def set_active_backend(backend: Backend) -> None:
     Called by Auth.__init__; group_protection functions run inside Dash
     callbacks with no auth instance in scope and look the backend up here.
     """
-    global _active_backend
+    global _active_backend  # noqa: PLW0603 — one backend per process, by design
     _active_backend = backend
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 from authlib.integrations.base_client import (
     BaseApp,
@@ -38,9 +38,9 @@ except ImportError as exc:  # pragma: no cover - exercised only on broken instal
 
 __all__ = [
     "OAuth",
+    "OAuthError",
     "QuartIntegration",
     "QuartOAuth2App",
-    "OAuthError",
 ]
 
 
@@ -63,8 +63,13 @@ class QuartIntegration(FrameworkIntegration):
             return None
 
     async def get_state_data(
-        self, session: Optional[dict[str, Any]], state: str
-    ) -> Optional[dict[str, Any]]:
+        self, session: dict[str, Any] | None, state: str
+    ) -> dict[str, Any] | None:
+        """Return the stored authorization state data, or None if absent.
+
+        Returns:
+            The state ``data`` payload, or None when not found or unverified.
+        """
         key = f"_state_{self.name}_{state}"
         if self.cache:
             # require a session-bound marker to prove the callback
@@ -83,8 +88,9 @@ class QuartIntegration(FrameworkIntegration):
         return None
 
     async def set_state_data(
-        self, session: Optional[dict[str, Any]], state: str, data: Any
+        self, session: dict[str, Any] | None, state: str, data: Any
     ):
+        """Persist authorization state data, sweeping stale state keys."""
         key_prefix = f"_state_{self.name}_"
         key = f"{key_prefix}{state}"
         now = time.time()
@@ -103,7 +109,8 @@ class QuartIntegration(FrameworkIntegration):
                     session.pop(old_key)
             session[key] = {"data": data, "exp": now + self.expires_in}
 
-    async def clear_state_data(self, session: Optional[dict[str, Any]], state: str):
+    async def clear_state_data(self, session: dict[str, Any] | None, state: str):
+        """Remove the stored authorization state data for ``state``."""
         key = f"_state_{self.name}_{state}"
         if self.cache:
             await self.cache.delete(key)
@@ -112,10 +119,15 @@ class QuartIntegration(FrameworkIntegration):
             self._clear_session_state(session)
 
     def update_token(self, token, refresh_token=None, access_token=None):
-        pass
+        """No-op token-update hook required by the authlib interface."""
 
     @staticmethod
     def load_config(oauth, name, params):
+        """Read ``{NAME}_{PARAM}`` config values into a dict.
+
+        Returns:
+            The mapping of requested params present in the app config.
+        """
         rv = {}
         for k in params:
             conf_key = f"{name}_{k}".upper()
@@ -140,7 +152,9 @@ class AsyncQuartAppMixin:
 
         :param redirect_uri: Callback or redirect URI for authorization.
         :param kwargs: Extra parameters to include.
-        :return: A Quart redirect response.
+
+        Returns:
+            A Quart redirect response.
         """
         rv = await self.create_authorization_url(redirect_uri, **kwargs)  # type: ignore
         await self.save_authorize_data(redirect_uri=redirect_uri, **rv)
@@ -148,6 +162,8 @@ class AsyncQuartAppMixin:
 
 
 class QuartOAuth2App(AsyncQuartAppMixin, AsyncOAuth2Mixin, AsyncOpenIDMixin, BaseApp):
+    """OAuth2/OIDC app for the Quart backend."""
+
     client_cls = AsyncOAuth2Client
 
     async def authorize_access_token(self, **kwargs):
@@ -156,7 +172,11 @@ class QuartOAuth2App(AsyncQuartAppMixin, AsyncOAuth2Mixin, AsyncOpenIDMixin, Bas
         Only the GET callback shape is handled: OIDCAuth registers the
         callback route with methods=["GET"] exclusively.
 
-        :return: A token dict.
+        Returns:
+            A token dict, including ``userinfo`` when an id_token is present.
+
+        Raises:
+            OAuthError: if the IdP returned an error in the callback.
         """
         error = quart.request.args.get("error")
         if error:
@@ -199,6 +219,7 @@ class OAuth(BaseOAuth):
     framework_integration_cls = QuartIntegration
 
     def __init__(self, app=None, cache=None, fetch_token=None, update_token=None):
+        """Create the registry, optionally binding a Quart app immediately."""
         super().__init__(
             cache=cache, fetch_token=fetch_token, update_token=update_token
         )
@@ -220,11 +241,25 @@ class OAuth(BaseOAuth):
         app.extensions["authlib.integrations.quart_client"] = self
 
     def create_client(self, name):
+        """Create the OAuth client registered under ``name``.
+
+        Returns:
+            The instantiated OAuth client.
+
+        Raises:
+            RuntimeError: if no Quart app has been initialised.
+        """
         if not self.app:
             raise RuntimeError("OAuth is not init with Quart app.")
         return super().create_client(name)
 
     def register(self, name, overwrite=False, **kwargs):
+        """Register an OAuth provider and return its client.
+
+        Returns:
+            The client, or a LocalProxy that lazily creates it when no app
+            is bound yet.
+        """
         self._registry[name] = (overwrite, kwargs)
         if self.app:
             return self.create_client(name)

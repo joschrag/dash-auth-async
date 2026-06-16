@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dash-auth-async"
-version = "1.2.0"
+version = "1.2.1"
 description = "Dash Authorization Package."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,7 +31,6 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Database :: Front-Ends",
-    "Topic :: Office/Business :: Financial :: Spreadsheet",
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Widget Sets",
@@ -39,13 +38,11 @@ classifiers = [
 dependencies = [
     "authlib>=1.7.2",
     "flask>=3.1.3",
-    "requests[security]>=2.34.2",
     "werkzeug>=3.1.8",
     "dash>=2",
 ]
 
 [project.optional-dependencies]
-oidc = ["authlib"]
 fastapi = ["dash[fastapi]>=4.2.0"]
 quart = ["dash[quart]>=4.2.0","httpx>=0.23.0"]
 async = ["dash[async]>=4.2.0"]
@@ -69,11 +66,15 @@ dev = [
     "ruff>=0.15.16",
     "pytest-cov>=7.1.0",
     "websocket-client>=1.9.0",
+    "requests[security]>=2.34.2"
 ]
 
 [tool.uv]
 constraint-dependencies = [
     "setuptools<80",
+    # GHSA: cryptography wheels < 48.0.1 bundle a vulnerable OpenSSL
+    # (advisory 2026-06-09). Pulled in transitively via authlib.
+    "cryptography>=48.0.1",
 ]
 override-dependencies = [
     "urllib3>=2.7.0",
@@ -85,4 +86,33 @@ venvs = [".venv"]
 paths = ["dash_auth_async"]
 deps-file = "pyproject.toml"
 sections = ["project.dependencies"]
-exclude-deps = ["requests"]
+exclude-deps = []
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+preview = true
+select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are self-describing and have different idioms than library code:
+"tests/**" = [
+    "D",        # don't require docstrings on every test/fixture/module
+    "DOC",      # ...nor docstring sections (Returns, etc.)
+    "PLR2004",  # status-code literals (200/401/...) read clearer than named constants in asserts
+    "PLC0415",  # local imports are fine for optional deps and lazy fixtures
+    "PLC2701",  # tests legitimately import private names to exercise internals
+    "PLR6301",  # mock methods match a backend's instance interface; can't be static
+    "PLR0913",  # mocks/fixtures mirror real signatures, including wide ones
+    "PLR0917",  # ...same, for positional-argument count
+    "PERF203",  # try/except in a loop is irrelevant in test setup
+    "RUF029",   # async mocks intentionally match an awaited interface without awaiting
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

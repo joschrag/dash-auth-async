@@ -11,7 +11,7 @@ from dash_auth_async.group_protection import (
     _current_user,
     _prevent_unauthorised,
 )
-from dash_auth_async.websocket_auth import _ContextCopyingExecutor, _WS_AUTH_USER
+from dash_auth_async.websocket_auth import _WS_AUTH_USER, _ContextCopyingExecutor
 
 _probe: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "probe", default="DEFAULT"
@@ -73,7 +73,8 @@ def test_context_copying_executor_propagates_contextvar():
 
 def test_plain_executor_does_not_propagate_contextvar():
     """Control: a plain ThreadPoolExecutor worker sees the default, proving the
-    custom executor is doing real work."""
+    custom executor is doing real work.
+    """
     token = _probe.set("SET-IN-SUBMITTER")
     try:
         with ThreadPoolExecutor(max_workers=1) as ex:
@@ -85,6 +86,7 @@ def test_plain_executor_does_not_propagate_contextvar():
 def _build_auth_app():
     pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
     from dash import Dash, Input, Output, html
+
     from dash_auth_async import BasicAuth, public_callback
 
     app = Dash(__name__, backend="quart")
@@ -141,7 +143,8 @@ class _RecordingAuth:
 
 def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
     """With two dash-auth-async apps in the process, the hook consults only the
-    Auth registered for ``quart.current_app`` -- not some other app's Auth."""
+    Auth registered for ``quart.current_app`` -- not some other app's Auth.
+    """
     quart = pytest.importorskip("quart")
     from dash_auth_async.websocket_auth import (
         _AUTH_BY_SERVER,

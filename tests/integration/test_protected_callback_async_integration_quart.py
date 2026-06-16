@@ -17,8 +17,8 @@ value actually streams back across the socket.
 
 import asyncio
 
-from dash import Dash, Input, Output, dcc, html
 import pytest
+from dash import Dash, Input, Output, dcc, html
 
 from dash_auth_async import BasicAuth, protected_callback
 

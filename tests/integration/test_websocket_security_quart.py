@@ -162,7 +162,8 @@ def test_unauthenticated_ws_can_invoke_public_callback(dash_thread_server):
 
 def test_authenticated_wrong_group_ws_gets_fallback_not_secret(dash_thread_server):
     """Authenticated-but-under-privileged over the raw socket: the group gate
-    renders ``missing_permissions_output`` and never leaks the admin payload."""
+    renders ``missing_permissions_output`` and never leaks the admin payload.
+    """
     app = _build_app_with_protected_admin_callback()
     dash_thread_server(app)
     base = dash_thread_server.url

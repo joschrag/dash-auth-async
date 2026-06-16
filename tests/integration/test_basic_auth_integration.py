@@ -1,6 +1,7 @@
-from dash import Dash, Input, Output, dcc, html
-import requests
 import pytest
+import requests
+from dash import Dash, Input, Output, dcc, html
+
 from dash_auth_async import BasicAuth, add_public_routes, protected
 
 TEST_USERS = {

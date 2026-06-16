@@ -1,14 +1,14 @@
 from unittest.mock import patch
 
+import pytest
 import requests
 from dash import Dash, Input, Output, dcc, html
 from flask import redirect
 
 from dash_auth_async import (
-    protected_callback,
     OIDCAuth,
+    protected_callback,
 )
-import pytest
 
 _FLASK_OAUTH_MODULE = "authlib.integrations.flask_client.apps.FlaskOAuth2App"
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"

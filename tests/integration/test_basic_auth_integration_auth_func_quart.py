@@ -1,6 +1,6 @@
-from dash import Dash, Input, Output, dcc, html
-import requests
 import pytest
+import requests
+from dash import Dash, Input, Output, dcc, html
 
 from dash_auth_async import basic_auth
 
@@ -111,4 +111,3 @@ def test_ba003_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
         both_dict_and_func(dash_br, dash_thread_server, **kwargs)
     with pytest.raises(ValueError):
         both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs)
-    return
