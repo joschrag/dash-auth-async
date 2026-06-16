@@ -18,6 +18,27 @@ CheckType = Literal["one_of", "all_of", "none_of"]
 _PROCEED = object()
 
 
+def _current_user() -> Optional[dict]:
+    """Resolve the authenticated user for the current dispatch.
+
+    Single source of truth for "who is calling": under an HTTP request context
+    this is the framework session user; on the WebSocket worker path (no
+    framework context) it is the user the websocket_message hook stashed in
+    ``_WS_AUTH_USER`` for this dispatch. Returns ``None`` when unauthenticated.
+
+    Every helper that needs the caller -- ``list_groups`` and the default
+    ``protected_callback`` fallbacks -- goes through here so none of them touch
+    ``backend.session`` directly (which raises ``RuntimeError`` off-request).
+    """
+    backend = get_active_backend()
+    if backend.has_request_context():
+        # Normal HTTP path: read the user from the framework session.
+        return backend.session.get("user")
+    # WebSocket worker path: no framework context here, so read the user the
+    # websocket_message hook stashed for this dispatch.
+    return _WS_AUTH_USER.get()
+
+
 def list_groups(
     *,
     groups_key: str = "groups",
@@ -32,18 +53,9 @@ def list_groups(
         * None if the user is not authenticated
         * list[str] otherwise
     """
-    backend = get_active_backend()
-    if backend.has_request_context():
-        # Normal HTTP path: read the user from the framework session.
-        if "user" not in backend.session:
-            return None
-        user = backend.session["user"]
-    else:
-        # WebSocket worker path: no framework context here, so read the user
-        # the websocket_message hook stashed for this dispatch.
-        user = _WS_AUTH_USER.get()
-        if user is None:
-            return None
+    user = _current_user()
+    if user is None:
+        return None
 
     user_groups = user.get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
@@ -177,6 +189,31 @@ def protected(
     return decorator
 
 
+def _prevent_unauthenticated(func_name: str) -> None:
+    """Default ``unauthenticated_output``: log and stop the callback."""
+    logging.info(
+        "A user tried to run %s without being authenticated.",
+        func_name,
+    )
+    raise PreventUpdate
+
+
+def _prevent_unauthorised(func_name: str) -> None:
+    """Default ``missing_permissions_output``: log and stop the callback.
+
+    Resolves the caller via ``_current_user`` rather than touching
+    ``backend.session`` directly, so it stays graceful on the WebSocket worker
+    path (no request context) instead of raising ``RuntimeError``.
+    """
+    user = _current_user() or {}
+    logging.info(
+        "%s tried to run %s but did not have the right permissions.",
+        user.get("email", "<unknown user>"),
+        func_name,
+    )
+    raise PreventUpdate
+
+
 def protected_callback(
     *callback_args,
     unauthenticated_output: Optional[OutputVal] = None,
@@ -213,32 +250,17 @@ def protected_callback(
     """
 
     def decorator(func):
-        def prevent_unauthenticated():
-            logging.info(
-                "A user tried to run %s without being authenticated.",
-                func.__name__,
-            )
-            raise PreventUpdate
-
-        def prevent_unauthorised():
-            logging.info(
-                "%s tried to run %s but did not have the right permissions.",
-                get_active_backend().session["user"]["email"],
-                func.__name__,
-            )
-            raise PreventUpdate
-
         wrapped_func = dash.callback(*callback_args, **callback_kwargs)(
             protected(
                 unauthenticated_output=(
                     unauthenticated_output
                     if unauthenticated_output is not None
-                    else prevent_unauthenticated
+                    else functools.partial(_prevent_unauthenticated, func.__name__)
                 ),
                 missing_permissions_output=(
                     missing_permissions_output
                     if missing_permissions_output is not None
-                    else prevent_unauthorised
+                    else functools.partial(_prevent_unauthorised, func.__name__)
                 ),
                 groups=groups,
                 groups_key=groups_key,
