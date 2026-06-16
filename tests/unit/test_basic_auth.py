@@ -112,7 +112,8 @@ class RecordingBackend(Backend):
 def test_auth_state_exists_when_hook_is_registered(monkeypatch):
     """By the time _protect() registers the hook, _users must already be set —
     otherwise a request arriving mid-construction hits is_authorized() against a
-    half-initialised instance and raises AttributeError."""
+    half-initialised instance and raises AttributeError.
+    """
     backend = RecordingBackend()
     monkeypatch.setattr("dash_auth_async.auth.detect_backend", lambda server: backend)
     BasicAuth(Dash(__name__), VALID_USERS)
@@ -121,7 +122,8 @@ def test_auth_state_exists_when_hook_is_registered(monkeypatch):
 
 def test_invalid_config_rejected_before_wiring_hooks(monkeypatch):
     """Passing both username list and auth_func must raise before any hook or
-    executor wiring mutates server state."""
+    executor wiring mutates server state.
+    """
     backend = RecordingBackend()
     monkeypatch.setattr("dash_auth_async.auth.detect_backend", lambda server: backend)
     with pytest.raises(ValueError):

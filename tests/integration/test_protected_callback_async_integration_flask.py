@@ -13,8 +13,8 @@ See https://dash.plotly.com/advanced-callbacks#using-async/await-in-callbacks
 
 import asyncio
 
-from dash import Dash, Input, Output, dcc, html
 import pytest
+from dash import Dash, Input, Output, dcc, html
 
 from dash_auth_async import BasicAuth, protected_callback
 

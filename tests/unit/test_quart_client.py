@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
 pytest.importorskip("httpx", reason="httpx is required for the Quart OAuth client")
 
-from dash_auth_async.quart_client import QuartIntegration  # noqa: E402
+from dash_auth_async.quart_client import QuartIntegration
 
 
 def test_state_data_roundtrip():

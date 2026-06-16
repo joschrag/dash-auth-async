@@ -1,4 +1,7 @@
+"""Runnable example: protect a Dash app with ``BasicAuth``."""
+
 from dash import Dash, Input, Output, dcc, html
+
 import dash_auth_async
 
 # Keep this out of source code repository - save in a file or a database
@@ -9,6 +12,7 @@ SECRET = "Test!"
 # Authorization function defined by developer
 # (can be used instead of VALID_USERNAME_PASSWORD_PAIRS [Example 2 below])
 def authorization_function(username, password):
+    """Return ``True`` when the supplied credentials are valid."""
     if (username == "hello") and (password == "world"):
         return True
     else:
@@ -41,9 +45,14 @@ app.layout = html.Div(
 
 @app.callback(Output("graph", "figure"), [Input("dropdown", "value")])
 def update_graph(dropdown_value):
+    """Build the figure shown for the selected dropdown value.
+
+    Returns:
+        A Plotly figure dict for the selected dropdown value.
+    """
     return {
         "layout": {
-            "title": "Graph of {}".format(dropdown_value),
+            "title": f"Graph of {dropdown_value}",
             "margin": {"l": 20, "b": 20, "r": 10, "t": 60},
         },
         "data": [{"x": [1, 2, 3], "y": [4, 1, 2]}],

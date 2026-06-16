@@ -1,9 +1,9 @@
-import pytest
 from typing import Any
 
 import dash.testing.application_runners as _runners
+import pytest
 
-import dash_auth_async.backends as backends
+from dash_auth_async import backends
 
 
 def _stop_quart_gracefully(runner) -> bool:
