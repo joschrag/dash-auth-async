@@ -2,7 +2,7 @@ import base64
 import logging
 from typing import Dict, List, Optional, Union, Callable, cast
 from dash import Dash
-
+import binascii
 from .auth import Auth
 
 UserGroups = Dict[str, List[str]]
@@ -44,7 +44,6 @@ class BasicAuth(Auth):
             you should create a key and then assign the value of
             that key in your code.
         """
-        super().__init__(app, public_routes=public_routes)
         self._auth_func = auth_func
         if isinstance(user_groups, dict):
             self._user_groups_dict: UserGroups | None = cast(UserGroups, user_groups)
@@ -74,14 +73,20 @@ class BasicAuth(Auth):
                     if isinstance(username_password_list, dict)
                     else {k: v for k, v in username_password_list}
                 )
+        super().__init__(app, public_routes=public_routes)
 
     def is_authorized(self):
         header = self.request.headers.get("Authorization", None)
         if not header:
             return False
-        username_password = base64.b64decode(header.split("Basic ")[1])
-        username_password_utf8 = username_password.decode("utf-8")
-        username, password = username_password_utf8.split(":", 1)
+        try:
+            username_password = base64.b64decode(
+                header.split("Basic ")[1], validate=True
+            )
+            username_password_utf8 = username_password.decode("utf-8")
+            username, password = username_password_utf8.split(":", 1)
+        except (binascii.Error, UnicodeEncodeError, ValueError, IndexError):
+            return False
         authorized = False
         if self._auth_func is not None:
             try:
