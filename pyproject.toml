@@ -48,6 +48,7 @@ dependencies = [
 oidc = ["authlib"]
 fastapi = ["dash[fastapi]>=4.2.0"]
 quart = ["dash[quart]>=4.2.0","httpx>=0.23.0"]
+async = ["dash[async]>=4.2.0"]
 
 [project.urls]
 Homepage = "https://github.com/joschrag/dash-auth-async"
@@ -58,6 +59,7 @@ include = ["dash_auth_async*"]
 
 [dependency-groups]
 dev = [
+    "asgiref",
     "creosote>=5.2.0",
     "dash[testing]>=2",
     "setuptools",
@@ -66,6 +68,7 @@ dev = [
     "pytest>=8.3.5",
     "ruff>=0.15.16",
     "pytest-cov>=7.1.0",
+    "websocket-client",
 ]
 
 [tool.uv]

@@ -56,6 +56,18 @@ wheels = [
 ]
 
 [[package]]
+name = "asgiref"
+version = "3.11.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/40/f03da1264ae8f7cfdbf9146542e5e7e8100a4c66ab48e791df9a03d3f6c0/asgiref-3.11.1.tar.gz", hash = "sha256:5f184dc43b7e763efe848065441eac62229c9f7b0475f41f80e207a114eda4ce", size = 38550, upload-time = "2026-02-03T13:30:14.33Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/0a/a72d10ed65068e115044937873362e6e32fab1b7dce0046aeb224682c989/asgiref-3.11.1-py3-none-any.whl", hash = "sha256:e8667a091e69529631969fd45dc268fa79b99c92c5fcdda727757e52146ec133", size = 24345, upload-time = "2026-02-03T13:30:13.039Z" },
+]
+
+[[package]]
 name = "attrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -558,6 +570,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+async = [
+    { name = "flask", extra = ["async"] },
+]
 fastapi = [
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
@@ -592,6 +607,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+async = [
+    { name = "dash", extra = ["async"] },
+]
 fastapi = [
     { name = "dash", extra = ["fastapi"] },
 ]
@@ -605,6 +623,7 @@ quart = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "asgiref" },
     { name = "creosote" },
     { name = "dash", extra = ["testing"] },
     { name = "pre-commit" },
@@ -613,6 +632,7 @@ dev = [
     { name = "ruff" },
     { name = "setuptools" },
     { name = "ty" },
+    { name = "websocket-client" },
 ]
 
 [package.metadata]
@@ -620,6 +640,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.7.2" },
     { name = "authlib", marker = "extra == 'oidc'" },
     { name = "dash", specifier = ">=2" },
+    { name = "dash", extras = ["async"], marker = "extra == 'async'", specifier = ">=4.2.0" },
     { name = "dash", extras = ["fastapi"], marker = "extra == 'fastapi'", specifier = ">=4.2.0" },
     { name = "dash", extras = ["quart"], marker = "extra == 'quart'", specifier = ">=4.2.0" },
     { name = "flask", specifier = ">=3.1.3" },
@@ -627,10 +648,11 @@ requires-dist = [
     { name = "requests", extras = ["security"], specifier = ">=2.34.2" },
     { name = "werkzeug", specifier = ">=3.1.8" },
 ]
-provides-extras = ["oidc", "fastapi", "quart"]
+provides-extras = ["oidc", "fastapi", "quart", "async"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "asgiref" },
     { name = "creosote", specifier = ">=5.2.0" },
     { name = "dash", extras = ["testing"], specifier = ">=2" },
     { name = "pre-commit", specifier = ">=3.5.0" },
@@ -639,6 +661,7 @@ dev = [
     { name = "ruff", specifier = ">=0.15.16" },
     { name = "setuptools" },
     { name = "ty" },
+    { name = "websocket-client" },
 ]
 
 [[package]]
@@ -747,6 +770,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/26/00/35d85dcce6c57fdc871f3867d465d780f302a175ea360f62533f12b27e2b/flask-3.1.3.tar.gz", hash = "sha256:0ef0e52b8a9cd932855379197dd8f94047b359ca0a78695144304cb45f87c9eb", size = 759004, upload-time = "2026-02-19T05:00:57.678Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/9c/34f6962f9b9e9c71f6e5ed806e0d0ff03c9d1b0b2340088a0cf4bce09b18/flask-3.1.3-py3-none-any.whl", hash = "sha256:f4bcbefc124291925f1a26446da31a5178f9483862233b23c0c96a20701f670c", size = 103424, upload-time = "2026-02-19T05:00:56.027Z" },
+]
+
+[package.optional-dependencies]
+async = [
+    { name = "asgiref" },
 ]
 
 [[package]]
