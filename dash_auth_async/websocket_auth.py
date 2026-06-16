@@ -12,21 +12,20 @@ import contextvars
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any
 from weakref import WeakKeyDictionary
 
 # The authenticated user (session["user"] dict) for the callback currently being
 # dispatched over a WebSocket. Set by the websocket_message hook in the WS
 # context and propagated into Dash's callback worker by the context-copying
 # executor. ``list_groups`` reads it when no HTTP request context is active.
-_WS_AUTH_USER: "ContextVar[Optional[dict]]" = ContextVar(
+_WS_AUTH_USER: ContextVar[dict | None] = ContextVar(
     "dash_auth_async_ws_user", default=None
 )
 
 
 class _ContextCopyingExecutor(ThreadPoolExecutor):
-    """A ThreadPoolExecutor that runs each task inside a copy of the context
-    active at ``submit()`` time.
+    """Run each submitted task inside a copy of the submit-time context.
 
     Dash's WebSocket runner submits callbacks to a plain ThreadPoolExecutor,
     which does not propagate ``contextvars`` into the worker thread. We pre-seed
@@ -42,7 +41,7 @@ class _ContextCopyingExecutor(ThreadPoolExecutor):
 
 
 # server (Quart/Flask app) -> Auth. Weak keys so test apps are collected.
-_AUTH_BY_SERVER: "WeakKeyDictionary[Any, Any]" = WeakKeyDictionary()
+_AUTH_BY_SERVER: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
 
 _hook_lock = threading.Lock()
 _hook_registered = False
@@ -51,15 +50,18 @@ _hook_registered = False
 def _ws_message_hook(ws: Any, message: Any):
     """Global Dash websocket_message hook: authorize each callback_request.
 
-    Returns a truthy value to allow, or a ``(code, reason)`` tuple to reject
-    (which closes the socket). Resolves the owning app via ``quart.current_app``
-    so it is correct when several apps share the process; inert for apps that do
-    not use dash-auth-async.
+    Resolves the owning app via ``quart.current_app`` so it is correct when
+    several apps share the process; inert for apps that do not use
+    dash-auth-async.
+
+    Returns:
+        A truthy value to allow, or a ``(code, reason)`` tuple to reject
+        (which closes the socket).
     """
     if not isinstance(message, dict) or message.get("type") != "callback_request":
         return True
     try:
-        import quart
+        import quart  # noqa: PLC0415 — quart is an optional dependency
 
         # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
         # the real Quart app (the key in ``_AUTH_BY_SERVER``). The attribute is
@@ -90,11 +92,11 @@ def _ws_message_hook(ws: Any, message: Any):
 
 def _ensure_hook_registered() -> None:
     """Register the global websocket_message hook exactly once per process."""
-    global _hook_registered
+    global _hook_registered  # noqa: PLW0603 — register the hook once per process
     with _hook_lock:
         if _hook_registered:
             return
-        from dash import hooks
+        from dash import hooks  # noqa: PLC0415 — lazy import to avoid an import cycle
 
         hooks.websocket_message()(_ws_message_hook)
         _hook_registered = True

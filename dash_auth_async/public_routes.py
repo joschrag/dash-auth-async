@@ -1,9 +1,12 @@
+"""Public route and callback registration for unauthenticated access."""
+
 import inspect
 import os
 
-from dash import Dash, callback
-from dash._callback import GLOBAL_CALLBACK_MAP
-from dash import get_app
+from dash import Dash, callback, get_app
+
+# GLOBAL_CALLBACK_MAP is a Dash internal with no public API equivalent.
+from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
 from werkzeug.routing import Map, MapAdapter, Rule
 
 DASH_PUBLIC_ASSETS_EXTENSIONS = "js,css"
@@ -65,7 +68,6 @@ def add_public_routes(app: Dash, routes: list):
     :param app: Dash app
     :param routes: list of public routes to be added
     """
-
     public_routes = get_public_routes(app)
     url_base = get_url_base(app)
 
@@ -73,9 +75,10 @@ def add_public_routes(app: Dash, routes: list):
         routes = BASE_PUBLIC_ROUTES + routes
 
     for route in routes:
-        if url_base and not route.startswith(url_base):
-            route = url_base.rstrip("/") + route
-        public_routes.map.add(Rule(route))
+        full_route = route
+        if url_base and not full_route.startswith(url_base):
+            full_route = url_base.rstrip("/") + full_route
+        public_routes.map.add(Rule(full_route))
 
     app.server.config[PUBLIC_ROUTES] = public_routes
 
@@ -87,6 +90,9 @@ def public_callback(*callback_args, **callback_kwargs):
     of whitelisted callbacks in the Flask server's config.
 
     :param **: all args and kwargs passed to a dash callback
+
+    Returns:
+        A decorator that registers the public Dash callback.
     """
 
     def decorator(func):
@@ -101,8 +107,9 @@ def public_callback(*callback_args, **callback_kwargs):
         )
         try:
             app = get_app()
-            app.server.config[PUBLIC_CALLBACKS] = get_public_callbacks(app) + [
-                callback_id
+            app.server.config[PUBLIC_CALLBACKS] = [
+                *get_public_callbacks(app),
+                callback_id,
             ]
         except Exception:
             print(
@@ -119,10 +126,18 @@ def public_callback(*callback_args, **callback_kwargs):
 
 
 def get_public_routes(app: Dash) -> MapAdapter:
-    """Retrieve the public routes."""
+    """Retrieve the public routes.
+
+    Returns:
+        The MapAdapter holding the app's registered public routes.
+    """
     return app.server.config.get(PUBLIC_ROUTES, Map([]).bind(""))
 
 
 def get_public_callbacks(app: Dash) -> list:
-    """Retrieve the public callbacks ids."""
+    """Retrieve the public callbacks ids.
+
+    Returns:
+        The list of whitelisted public callback ids.
+    """
     return app.server.config.get(PUBLIC_CALLBACKS, [])

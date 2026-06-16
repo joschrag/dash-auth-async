@@ -1,8 +1,11 @@
-import inspect
+"""Group-based protection for Dash callbacks and outputs."""
+
 import functools
+import inspect
 import logging
 import re
-from typing import Any, Callable, List, Literal, Optional, Union
+from collections.abc import Callable
+from typing import Any, Literal
 
 import dash
 from dash.exceptions import PreventUpdate
@@ -10,7 +13,7 @@ from dash.exceptions import PreventUpdate
 from .backends import get_active_backend
 from .websocket_auth import _WS_AUTH_USER
 
-OutputVal = Union[Callable[[], Any], Any]
+OutputVal = Callable[[], Any] | Any
 CheckType = Literal["one_of", "all_of", "none_of"]
 
 # Sentinel: the gate authorises the call, so run the protected target rather
@@ -18,7 +21,7 @@ CheckType = Literal["one_of", "all_of", "none_of"]
 _PROCEED = object()
 
 
-def _current_user() -> Optional[dict]:
+def _current_user() -> dict | None:
     """Resolve the authenticated user for the current dispatch.
 
     Single source of truth for "who is calling": under an HTTP request context
@@ -29,6 +32,9 @@ def _current_user() -> Optional[dict]:
     Every helper that needs the caller -- ``list_groups`` and the default
     ``protected_callback`` fallbacks -- goes through here so none of them touch
     ``backend.session`` directly (which raises ``RuntimeError`` off-request).
+
+    Returns:
+        The authenticated user dict, or None when unauthenticated.
     """
     backend = get_active_backend()
     if backend.has_request_context():
@@ -43,15 +49,15 @@ def list_groups(
     *,
     groups_key: str = "groups",
     groups_str_split: str | None = None,
-) -> Optional[List[str]]:
+) -> list[str] | None:
     """List all the groups the user belongs to.
 
     :param groups_key: Groups key in the user data saved in the backend session
         e.g. session["user"] == {"email": "a.b@mail.com", "groups": ["admin"]}
     :param groups_str_split: Used to split groups if provided as a string
-    :return: None or list[str]:
-        * None if the user is not authenticated
-        * list[str] otherwise
+
+    Returns:
+        None if the user is not authenticated, otherwise the list of groups.
     """
     user = _current_user()
     if user is None:
@@ -66,14 +72,13 @@ def list_groups(
 
 
 def check_groups(
-    groups: Optional[List[str]] = None,
+    groups: list[str] | None = None,
     *,
     groups_key: str = "groups",
     groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
-) -> Optional[bool]:
-    """Check whether the current user is authenticated
-    and has the specified groups.
+) -> bool | None:
+    """Check whether the current user is authenticated and has the groups.
 
     :param groups: List of groups to check for with check_type
     :param groups_key: Groups key in the user data saved in the backend session
@@ -81,11 +86,13 @@ def check_groups(
     :param groups_str_split: Used to split groups if provided as a string
     :param check_type: Type of check to perform.
         Either "one_of", "all_of" or "none_of"
-    :return: None or boolean:
-        * None if the user is not authenticated
-        * True if the user is authenticated and has the right permissions
-        * False if the user is authenticated but does not have
-          the right permissions
+
+    Returns:
+        None if the user is not authenticated; True if authenticated with the
+        right permissions; False if authenticated without them.
+
+    Raises:
+        ValueError: if ``check_type`` is not a recognised value.
     """
     user_groups = list_groups(
         groups_key=groups_key,
@@ -109,17 +116,16 @@ def check_groups(
     raise ValueError(f"Invalid check_type: {check_type}")
 
 
-def protected(
+def protected(  # noqa: PLR0913 — public decorator with many optional knobs
     unauthenticated_output: OutputVal,
     *,
-    missing_permissions_output: Optional[OutputVal] = None,
-    groups: Optional[List[str]] = None,
+    missing_permissions_output: OutputVal | None = None,
+    groups: list[str] | None = None,
     groups_key: str = "groups",
     groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
 ) -> Callable:
-    """Decorate a function or output to alter it depending on the state
-    of authentication and permissions.
+    """Alter a function or output depending on authentication and permissions.
 
     :param unauthenticated_output: Output when the user is not authenticated.
         Note: needs to be a function with no argument or static outputs.
@@ -134,8 +140,10 @@ def protected(
     :param groups_str_split: Used to split groups if provided as a string
     :param check_type: Type of check to perform.
         Either "one_of", "all_of" or "none_of"
-    """
 
+    Returns:
+        A decorator that wraps the target output with the auth gate.
+    """
     if missing_permissions_output is None:
         missing_permissions_output = unauthenticated_output
 
@@ -190,7 +198,11 @@ def protected(
 
 
 def _prevent_unauthenticated(func_name: str) -> None:
-    """Default ``unauthenticated_output``: log and stop the callback."""
+    """Default ``unauthenticated_output``: log and stop the callback.
+
+    Raises:
+        PreventUpdate: always, to stop the callback from running.
+    """
     logging.info(
         "A user tried to run %s without being authenticated.",
         func_name,
@@ -204,6 +216,9 @@ def _prevent_unauthorised(func_name: str) -> None:
     Resolves the caller via ``_current_user`` rather than touching
     ``backend.session`` directly, so it stays graceful on the WebSocket worker
     path (no request context) instead of raising ``RuntimeError``.
+
+    Raises:
+        PreventUpdate: always, to stop the callback from running.
     """
     user = _current_user() or {}
     logging.info(
@@ -214,11 +229,11 @@ def _prevent_unauthorised(func_name: str) -> None:
     raise PreventUpdate
 
 
-def protected_callback(
+def protected_callback(  # noqa: PLR0913 — public decorator with many optional knobs
     *callback_args,
-    unauthenticated_output: Optional[OutputVal] = None,
-    missing_permissions_output: Optional[OutputVal] = None,
-    groups: List[str] | None = None,
+    unauthenticated_output: OutputVal | None = None,
+    missing_permissions_output: OutputVal | None = None,
+    groups: list[str] | None = None,
     groups_key: str = "groups",
     groups_str_split: str | None = None,
     check_type: CheckType = "one_of",
@@ -247,6 +262,9 @@ def protected_callback(
     :param groups_str_split: Used to split groups if provided as a string
     :param check_type: Type of check to perform.
         Either "one_of", "all_of" or "none_of"
+
+    Returns:
+        A decorator that registers the protected Dash callback.
     """
 
     def decorator(func):

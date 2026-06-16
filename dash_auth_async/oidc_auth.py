@@ -1,15 +1,18 @@
+"""OpenID Connect authentication for Dash on Flask and Quart backends."""
+
 import logging
 import os
 import re
-from typing import Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import dash
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
-from dash_auth_async.auth import Auth
-from dash_auth_async.public_routes import get_url_base
 from flask import Response
 from werkzeug.routing import Map, Rule
+
+from dash_auth_async.auth import Auth
+from dash_auth_async.public_routes import get_url_base
 
 from .backends import QuartBackend
 
@@ -18,6 +21,7 @@ if TYPE_CHECKING:
         FlaskOAuth1App,
         FlaskOAuth2App,
     )
+
     from dash_auth_async.quart_client import OAuth as QuartOAuth
     from dash_auth_async.quart_client import QuartOAuth2App
 
@@ -25,18 +29,18 @@ if TYPE_CHECKING:
 class OIDCAuth(Auth):
     """Implements auth via OpenID."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917 — configuration constructor
         self,
         app: dash.Dash,
         secret_key: str | None = None,
-        force_https_callback: Optional[Union[bool, str]] = None,
+        force_https_callback: bool | str | None = None,
         login_route: str = "/oidc/<idp>/login",
         logout_route: str = "/oidc/logout",
         callback_route: str = "/oidc/<idp>/callback",
         idp_selection_route: str | None = None,
         log_signins: bool = False,
-        public_routes: Optional[list] = None,
-        logout_page: Union[str, Response] | None = None,
+        public_routes: list | None = None,
+        logout_page: str | Response | None = None,
         secure_session: bool = False,
     ):
         """Secure a Dash app through OpenID Connect.
@@ -92,10 +96,10 @@ class OIDCAuth(Auth):
             SESSION_COOKIE_SECURE and SESSION_COOKIE_HTTPONLY to True,
             by default False
 
-        Raises
-        ------
-        Exception
-            Raise an exception if the app.server.secret_key is not defined
+        Raises:
+            RuntimeError: if ``app.server.secret_key`` is not defined.
+            Exception: if the login or callback route lacks an ``<idp>``
+                placeholder.
         """
         super().__init__(app, public_routes=public_routes)
 
@@ -139,9 +143,9 @@ class OIDCAuth(Auth):
         if isinstance(self.backend, QuartBackend):
             # Imported lazily so flask-only installs never import
             # quart/httpx (quart_client raises ImportError without them).
-            from dash_auth_async import quart_client
+            from dash_auth_async import quart_client  # noqa: PLC0415
 
-            self.oauth: "OAuth | quart_client.OAuth" = quart_client.OAuth(app.server)
+            self.oauth: OAuth | quart_client.OAuth = quart_client.OAuth(app.server)
         else:
             self.oauth = OAuth(app.server)
 
@@ -192,6 +196,9 @@ class OIDCAuth(Auth):
             * server_metadata_url
             * token_endpoint_auth_method
             * client_kwargs (defaults to {"scope": "openid email"})
+
+        Raises:
+            ValueError: if ``idp_name`` contains unsupported characters.
         """
         if not re.match(r"^[\w\-\. ]+$", idp_name):
             raise ValueError(
@@ -203,30 +210,47 @@ class OIDCAuth(Auth):
         self.oauth.register(idp_name, client_kwargs=client_kwargs, **kwargs)
 
     def get_oauth_client(self, idp: str):
-        """Get the OAuth client."""
+        """Get the OAuth client.
+
+        Returns:
+            The authlib OAuth client for the given idp.
+
+        Raises:
+            ValueError: if ``idp`` is not a registered provider.
+        """
         if idp not in self.oauth._registry:
             raise ValueError(f"'{idp}' is not a valid registered idp")
 
-        client: Union[FlaskOAuth1App, FlaskOAuth2App, QuartOAuth2App] = (
+        client: FlaskOAuth1App | FlaskOAuth2App | QuartOAuth2App = (
             self.oauth.create_client(idp)
         )
         return client
 
     def get_oauth_kwargs(self, idp: str):
-        """Get the OAuth kwargs."""
+        """Get the OAuth kwargs.
+
+        Returns:
+            The registration kwargs stored for the given idp.
+
+        Raises:
+            ValueError: if ``idp`` is not a registered provider.
+        """
         if idp not in self.oauth._registry:
             raise ValueError(f"'{idp}' is not a valid registered idp")
 
         kwargs: dict = self.oauth._registry[idp][1]
         return kwargs
 
-    def _resolve_idp(self, idp: Optional[str]):
+    def _resolve_idp(self, idp: str | None):
         """Resolve which idp to use for login.
 
-        Returns ``(idp, None)`` when a provider could be determined, or
-        ``(None, response)`` when the caller should return ``response``
-        instead (idp-selection redirect or a 400). Shared by the sync and
-        async login views so selection behavior cannot drift.
+        Shared by the sync and async login views so selection behavior
+        cannot drift.
+
+        Returns:
+            ``(idp, None)`` when a provider could be determined, or
+            ``(None, response)`` when the caller should return ``response``
+            instead (idp-selection redirect or a 400).
         """
         if idp in self.oauth._registry:
             return idp, None
@@ -244,7 +268,11 @@ class OIDCAuth(Auth):
         )
 
     def _create_redirect_uri(self, idp: str):
-        """Create the redirect uri based on callback endpoint and idp."""
+        """Create the redirect uri based on callback endpoint and idp.
+
+        Returns:
+            The fully-qualified OIDC callback redirect URI.
+        """
         if self.force_https_callback:
             redirect_uri = self.backend.url_for(
                 "oidc_callback", idp=idp, _external=True, _scheme="https"
@@ -263,6 +291,10 @@ class OIDCAuth(Auth):
 
         On the Quart path this returns a coroutine (both the route and the
         before-request hook await it); on Flask it returns the response.
+
+        Returns:
+            The authorize-redirect response, or a coroutine producing it on
+            the Quart path.
         """
         # `idp` can be none here as login_request is called
         # without arguments in the before_request hook
@@ -282,7 +314,11 @@ class OIDCAuth(Auth):
         )
 
     async def _login_request_async(self, idp: str | None = None):
-        """Async login view for the Quart path."""
+        """Async login view for the Quart path.
+
+        Returns:
+            The authorize-redirect response.
+        """
         idp, response = self._resolve_idp(idp)
         if response is not None:
             return response
@@ -296,7 +332,11 @@ class OIDCAuth(Auth):
         )
 
     def logout(self):  # pylint: disable=C0116
-        """Logout the user."""
+        """Logout the user.
+
+        Returns:
+            The logged-out page content.
+        """
         self.session.clear()
         base_url = get_url_base(self.app) or "/"
         page = (
@@ -312,11 +352,19 @@ class OIDCAuth(Auth):
         return page
 
     async def _logout_async(self):
-        """Async logout view for the Quart path; the body is sync."""
+        """Async logout view for the Quart path; the body is sync.
+
+        Returns:
+            The logged-out page content.
+        """
         return self.logout()
 
     def callback(self, idp: str):  # pylint: disable=C0116
-        """Handle the OIDC dance and post-login actions."""
+        """Handle the OIDC dance and post-login actions.
+
+        Returns:
+            The post-login redirect, or an error tuple on failure.
+        """
         if idp not in self.oauth._registry:
             return f"'{idp}' is not a valid registered idp", 400
 
@@ -333,7 +381,11 @@ class OIDCAuth(Auth):
         return self.after_logged_in(user, idp, token)
 
     async def _callback_async(self, idp: str):
-        """Async OIDC callback view for the Quart path."""
+        """Async OIDC callback view for the Quart path.
+
+        Returns:
+            The post-login redirect, or an error tuple on failure.
+        """
         if idp not in self.oauth._registry:
             return f"'{idp}' is not a valid registered idp", 400
 
@@ -349,15 +401,19 @@ class OIDCAuth(Auth):
         user = token.get("userinfo")
         return self.after_logged_in(user, idp, token)
 
-    def after_logged_in(self, user: Optional[dict], idp: str, token: dict):
-        """
-        Post-login actions after successful OIDC authentication.
-        For example, allows to pass custom attributes to the user session:
-        class MyOIDCAuth(OIDCAuth):
-            def after_logged_in(self, user, idp, token):
-                if user:
-                    user["params"] = value1
-                return super().after_logged_in(user, idp, token)
+    def after_logged_in(self, user: dict | None, idp: str, token: dict):
+        """Run post-login actions after successful OIDC authentication.
+
+        For example, allows passing custom attributes to the user session::
+
+            class MyOIDCAuth(OIDCAuth):
+                def after_logged_in(self, user, idp, token):
+                    if user:
+                        user["params"] = value1
+                    return super().after_logged_in(user, idp, token)
+
+        Returns:
+            A redirect response to the app's base URL.
         """
         if user:
             self.session["user"] = user
@@ -371,8 +427,11 @@ class OIDCAuth(Auth):
         return self.backend.redirect(get_url_base(self.app) or "/")
 
     def is_authorized(self):  # pylint: disable=C0116
-        """Check whether ther user is authenticated."""
+        """Check whether the user is authenticated.
 
+        Returns:
+            True if the path is an OIDC route or a user is in the session.
+        """
         map_adapter = Map(
             [
                 Rule(x)
@@ -388,12 +447,18 @@ class OIDCAuth(Auth):
         return map_adapter.test(self.request.path) or "user" in self.session
 
 
-def get_oauth(app: dash.Dash | None = None) -> "Union[OAuth, QuartOAuth]":
+def get_oauth(app: dash.Dash | None = None) -> "OAuth | QuartOAuth":
     """Retrieve the OAuth object.
 
     :param app: dash.Dash
         Dash app or None, if None the current app is used
         calling `dash.get_app()`
+
+    Returns:
+        The Flask or Quart OAuth integration registered on the app server.
+
+    Raises:
+        RuntimeError: if no OAuth object has been registered yet.
     """
     if app is None:
         app = dash.get_app()
