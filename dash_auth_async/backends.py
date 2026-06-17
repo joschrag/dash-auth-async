@@ -58,6 +58,66 @@ class Backend(ABC):
     def redirect(self, location: str) -> Any:
         """Return a redirect response to the given location."""
 
+    # --- Operations that diverge on FastAPI; defaults reproduce the
+    # --- Flask/Quart behavior so those backends inherit unchanged. These
+    # --- are concrete interface defaults, not all of which use `self`, so
+    # --- PLR6301 (no-self-use) is suppressed where that applies.
+
+    def coerce_response(self, result: Any) -> Any:  # noqa: PLR6301
+        """Convert an ``_authorize`` return into a real response.
+
+        Flask and Quart accept ``(body, status, headers)`` tuples, bare
+        strings, and framework responses natively, so the default is a
+        pass-through. FastAPI overrides this to build a Starlette response.
+
+        Returns:
+            The response value unchanged.
+        """
+        return result
+
+    def setup_session(self, server, secret_key: str | None) -> None:  # noqa: PLR6301
+        """Install session support on the server.
+
+        Flask/Quart store a ``secret_key`` attribute. FastAPI overrides
+        this to add ``SessionMiddleware``.
+        """
+        if secret_key is not None:
+            server.secret_key = secret_key
+
+    def session_configured(self, server) -> bool:  # noqa: PLR6301
+        """Whether the server can store a session.
+
+        Returns:
+            True if a session secret is configured.
+        """
+        return getattr(server, "secret_key", None) is not None
+
+    def current_host(self) -> str:
+        """Host (netloc) of the active request, for proxy host rewrites.
+
+        Returns:
+            The request host string.
+        """
+        return self.request.host
+
+    def add_route(  # noqa: PLR6301
+        self, server, rule: str, view_func, endpoint: str, methods
+    ) -> None:
+        """Register an OIDC route on the server."""
+        server.add_url_rule(
+            rule, endpoint=endpoint, view_func=view_func, methods=methods
+        )
+
+    def make_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Build the authlib OAuth registry for this backend.
+
+        Returns:
+            A flask_client ``OAuth`` registry bound to ``server``.
+        """
+        from authlib.integrations.flask_client import OAuth  # noqa: PLC0415
+
+        return OAuth(server)
+
 
 class FlaskBackend(Backend):
     """Backend adapter for a Flask server."""
@@ -201,6 +261,17 @@ class QuartBackend(Backend):
             A Quart redirect response.
         """
         return quart.redirect(location)
+
+    def make_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Build the authlib OAuth registry for the Quart backend.
+
+        Returns:
+            A custom Quart ``OAuth`` registry bound to ``server``.
+        """
+        # Imported lazily so flask-only installs never import quart/httpx.
+        from dash_auth_async import quart_client  # noqa: PLC0415
+
+        return quart_client.OAuth(server)
 
 
 def detect_backend(server: Any) -> Backend:
