@@ -14,7 +14,7 @@ from werkzeug.routing import Map, Rule
 from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 
-from .backends import FastAPIBackend, QuartBackend
+from .backends import FastAPIBackend, QuartBackend, StarletteRequest
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
@@ -389,7 +389,9 @@ class OIDCAuth(Auth):
         user = token.get("userinfo")
         return self.after_logged_in(user, idp, token)
 
-    async def _login_request_fastapi(self, request, idp: str | None = None):
+    async def _login_request_fastapi(
+        self, request: StarletteRequest, idp: str | None = None
+    ):
         """Async login view for the FastAPI path.
 
         Registered as a route (FastAPI injects ``request`` and the ``{idp}``
@@ -412,7 +414,7 @@ class OIDCAuth(Auth):
             **oauth_kwargs.get("authorize_redirect_kwargs", {}),
         )
 
-    async def _logout_fastapi(self, request):
+    async def _logout_fastapi(self, request: StarletteRequest):
         """Async logout view for the FastAPI path.
 
         Returns:
@@ -425,7 +427,7 @@ class OIDCAuth(Auth):
             return HTMLResponse(page)
         return page
 
-    async def _callback_fastapi(self, request, idp: str):
+    async def _callback_fastapi(self, request: StarletteRequest, idp: str):
         """Async OIDC callback view for the FastAPI path.
 
         Returns:
