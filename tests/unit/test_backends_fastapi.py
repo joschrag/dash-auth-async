@@ -196,3 +196,32 @@ def test_auth_hook_awaits_coroutine_results():
     r = client.get("/open")
     assert r.status_code == 403
     assert r.text == "async-block"
+
+
+def test_setup_session_adds_session_middleware_once():
+    from fastapi import FastAPI
+    from starlette.middleware.sessions import SessionMiddleware
+
+    backend = FastAPIBackend()
+    app = FastAPI()
+
+    assert backend.session_configured(app) is False
+
+    backend.setup_session(app, "Test!")
+    assert backend.session_configured(app) is True
+    count = sum(1 for m in app.user_middleware if m.cls is SessionMiddleware)
+    assert count == 1
+
+    # Calling again must not add a second SessionMiddleware.
+    backend.setup_session(app, "Test!")
+    count = sum(1 for m in app.user_middleware if m.cls is SessionMiddleware)
+    assert count == 1
+
+
+def test_setup_session_noop_without_secret_key():
+    from fastapi import FastAPI
+
+    backend = FastAPIBackend()
+    app = FastAPI()
+    backend.setup_session(app, None)
+    assert backend.session_configured(app) is False

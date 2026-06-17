@@ -404,6 +404,33 @@ class FastAPIBackend(Backend):
             return PlainTextResponse(result)
         return PlainTextResponse(str(result))
 
+    @staticmethod
+    def _has_session_middleware(server) -> bool:
+        return any(
+            getattr(m, "cls", None) is SessionMiddleware
+            for m in getattr(server, "user_middleware", [])
+        )
+
+    def setup_session(self, server, secret_key: str | None) -> None:
+        """Install Starlette ``SessionMiddleware`` from ``secret_key``.
+
+        Defers to a user-installed ``SessionMiddleware`` (opt-out/override)
+        and is idempotent — never adds a second instance.
+        """
+        if secret_key is None:
+            return
+        if self._has_session_middleware(server):
+            return
+        server.add_middleware(SessionMiddleware, secret_key=secret_key)
+
+    def session_configured(self, server) -> bool:
+        """Whether a ``SessionMiddleware`` is installed on the server.
+
+        Returns:
+            True if session storage is available.
+        """
+        return self._has_session_middleware(server)
+
     def register_auth_hook(self, server, needs_body, decide) -> None:
         """Register the before-request auth hook as pure-ASGI middleware.
 
