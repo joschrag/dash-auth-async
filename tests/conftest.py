@@ -38,6 +38,26 @@ def _stop_quart_gracefully(runner) -> bool:
     return not runner.thread.is_alive()
 
 
+def _stop_fastapi_gracefully(runner) -> bool:
+    """Shut down a fastapi-backend dash test server via uvicorn's should_exit.
+
+    Dash's FastAPI backend stores the uvicorn Server on the Dash app as
+    ``_uvicorn_server`` when run threaded (_fastapi.py:384). Setting
+    ``should_exit`` lets uvicorn's serve loop return so the thread exits
+    cleanly instead of being killed mid-flight.
+
+    Returns True if the server thread exited; False means fall back to the
+    original kill-based stop.
+    """
+    dash_app = getattr(runner, "_app", None)
+    server = getattr(dash_app, "_uvicorn_server", None)
+    if server is None:
+        return False
+    server.should_exit = True
+    runner.thread.join(timeout=runner.stop_timeout)
+    return not runner.thread.is_alive()
+
+
 _original_init = _runners.BaseDashRunner.__init__
 
 
@@ -61,15 +81,15 @@ _runners.BaseDashRunner.__init__ = _init_with_ipv4_host  # type: ignore
 _original_stop = _runners.ThreadedRunner.stop
 
 
-def _stop_with_graceful_quart(self: Any) -> Any:
-    if _stop_quart_gracefully(self):
+def _stop_with_graceful_async(self: Any) -> Any:
+    if _stop_quart_gracefully(self) or _stop_fastapi_gracefully(self):
         self._app = None
         self.started = False
         return
     return _original_stop(self)
 
 
-_runners.ThreadedRunner.stop = _stop_with_graceful_quart  # type: ignore
+_runners.ThreadedRunner.stop = _stop_with_graceful_async  # type: ignore
 
 
 @pytest.fixture(autouse=True)
