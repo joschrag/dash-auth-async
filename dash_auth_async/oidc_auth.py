@@ -14,7 +14,7 @@ from werkzeug.routing import Map, Rule
 from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 
-from .backends import QuartBackend
+from .backends import FastAPIBackend, QuartBackend
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
@@ -116,10 +116,9 @@ class OIDCAuth(Auth):
         self.idp_selection_route = idp_selection_route
         self.logout_page = logout_page
 
-        if secret_key is not None:
-            app.server.secret_key = secret_key
+        self.backend.setup_session(app.server, secret_key)
 
-        if app.server.secret_key is None:
+        if not self.backend.session_configured(app.server):
             raise RuntimeError("""
                 app.server.secret_key is missing.
                 Generate a secret key in your Python session
@@ -135,18 +134,11 @@ class OIDCAuth(Auth):
                 that key in your code/via a secret.
                 """)
 
-        if secure_session:
+        if secure_session and hasattr(app.server, "config"):
             app.server.config["SESSION_COOKIE_SECURE"] = True
             app.server.config["SESSION_COOKIE_HTTPONLY"] = True
 
-        if isinstance(self.backend, QuartBackend):
-            # Imported lazily so flask-only installs never import
-            # quart/httpx (quart_client raises ImportError without them).
-            from dash_auth_async import quart_client  # noqa: PLC0415
-
-            self.oauth: OAuth | quart_client.OAuth = quart_client.OAuth(app.server)
-        else:
-            self.oauth = OAuth(app.server)
+        self.oauth = self.backend.make_oauth(app.server)
 
         # Check that the login and callback rules have an <idp> placeholder
         if not re.findall(r"/<idp>(?=/|$)", login_route):
@@ -154,7 +146,11 @@ class OIDCAuth(Auth):
         if not re.findall(r"/<idp>(?=/|$)", callback_route):
             raise Exception("The callback route must contain a <idp> placeholder.")
 
-        if isinstance(self.backend, QuartBackend):
+        if isinstance(self.backend, FastAPIBackend):
+            login_view = self._login_request_fastapi
+            logout_view = self._logout_fastapi
+            callback_view = self._callback_fastapi
+        elif isinstance(self.backend, QuartBackend):
             login_view = self._login_request_async
             logout_view = self._logout_async
             callback_view = self._callback_async
@@ -163,23 +159,14 @@ class OIDCAuth(Auth):
             logout_view = self.logout
             callback_view = self.callback
 
-        app.server.add_url_rule(
-            login_route,
-            endpoint="oidc_login",
-            view_func=login_view,
-            methods=["GET"],
+        self.backend.add_route(
+            app.server, login_route, login_view, "oidc_login", ["GET"]
         )
-        app.server.add_url_rule(
-            logout_route,
-            endpoint="oidc_logout",
-            view_func=logout_view,
-            methods=["GET"],
+        self.backend.add_route(
+            app.server, logout_route, logout_view, "oidc_logout", ["GET"]
         )
-        app.server.add_url_rule(
-            callback_route,
-            endpoint="oidc_callback",
-            view_func=callback_view,
-            methods=["GET"],
+        self.backend.add_route(
+            app.server, callback_route, callback_view, "oidc_callback", ["GET"]
         )
 
     def register_provider(self, idp_name: str, **kwargs):
@@ -282,7 +269,7 @@ class OIDCAuth(Auth):
             )
         host = self.request.headers.get("X-Forwarded-Host")
         if host:
-            redirect_uri = redirect_uri.replace(self.request.host, host, 1)
+            redirect_uri = redirect_uri.replace(self.backend.current_host(), host, 1)
         return redirect_uri
 
     def login_request(self, idp: str | None = None):
@@ -297,6 +284,8 @@ class OIDCAuth(Auth):
         """
         # `idp` can be none here as login_request is called
         # without arguments in the before_request hook
+        if isinstance(self.backend, FastAPIBackend):
+            return self._login_request_fastapi(self.request, idp)
         if isinstance(self.backend, QuartBackend):
             return self._login_request_async(idp)
 
@@ -400,6 +389,66 @@ class OIDCAuth(Auth):
         user = token.get("userinfo")
         return self.after_logged_in(user, idp, token)
 
+    async def _login_request_fastapi(self, request, idp: str | None = None):
+        """Async login view for the FastAPI path.
+
+        Registered as a route (FastAPI injects ``request`` and the ``{idp}``
+        path param) and also called from the before-request middleware with
+        ``request`` resolved from the ContextVar (idp is None there).
+
+        Returns:
+            The authorize-redirect response, or an error response.
+        """
+        idp, response = self._resolve_idp(idp)
+        if response is not None:
+            return self.backend.coerce_response(response)
+
+        redirect_uri = self._create_redirect_uri(idp)
+        oauth_client = self.get_oauth_client(idp)
+        oauth_kwargs = self.get_oauth_kwargs(idp)
+        return await oauth_client.authorize_redirect(
+            request,
+            redirect_uri,
+            **oauth_kwargs.get("authorize_redirect_kwargs", {}),
+        )
+
+    async def _logout_fastapi(self, request):
+        """Async logout view for the FastAPI path.
+
+        Returns:
+            The logged-out page response.
+        """
+        page = self.logout()  # clears self.session (ContextVar-backed)
+        if isinstance(page, str):
+            from starlette.responses import HTMLResponse  # noqa: PLC0415
+
+            return HTMLResponse(page)
+        return page
+
+    async def _callback_fastapi(self, request, idp: str):
+        """Async OIDC callback view for the FastAPI path.
+
+        Returns:
+            The post-login redirect, or an error response on failure.
+        """
+        if idp not in self.oauth._registry:
+            return self.backend.coerce_response(
+                (f"'{idp}' is not a valid registered idp", 400)
+            )
+
+        oauth_client = self.get_oauth_client(idp)
+        oauth_kwargs = self.get_oauth_kwargs(idp)
+        try:
+            token = await oauth_client.authorize_access_token(
+                request,
+                **oauth_kwargs.get("authorize_token_kwargs", {}),
+            )
+        except OAuthError as err:
+            return self.backend.coerce_response((str(err), 401))
+
+        user = token.get("userinfo")
+        return self.after_logged_in(user, idp, token)
+
     def after_logged_in(self, user: dict | None, idp: str, token: dict):
         """Run post-login actions after successful OIDC authentication.
 
@@ -443,7 +492,7 @@ class OIDCAuth(Auth):
                 if x
             ]
         ).bind("")
-        return map_adapter.test(self.request.path) or "user" in self.session
+        return map_adapter.test(self.backend.current_path()) or "user" in self.session
 
 
 def get_oauth(app: dash.Dash | None = None) -> "OAuth | QuartOAuth":
@@ -461,6 +510,10 @@ def get_oauth(app: dash.Dash | None = None) -> "OAuth | QuartOAuth":
     """
     if app is None:
         app = dash.get_app()
+
+    state_oauth = getattr(getattr(app.server, "state", None), "dash_auth_oauth", None)
+    if state_oauth is not None:
+        return state_oauth
 
     extensions = getattr(app.server, "extensions", {})
     for extension_key in (
