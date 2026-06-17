@@ -22,8 +22,7 @@ if TYPE_CHECKING:
         FlaskOAuth2App,
     )
 
-    from dash_auth_async.quart_client import OAuth as QuartOAuth
-    from dash_auth_async.quart_client import QuartOAuth2App
+    from dash_auth_async.quart_client import OAuth as QuartOAuth, QuartOAuth2App
 
 
 class OIDCAuth(Auth):

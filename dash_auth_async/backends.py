@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable, MutableMapping
+from contextvars import ContextVar
 from typing import Any
 
 import flask
@@ -16,6 +17,28 @@ try:
 except ImportError:
     quart: Any = None
     HAS_QUART = False
+
+try:
+    import fastapi
+    from starlette.middleware.sessions import SessionMiddleware
+    from starlette.requests import Request as StarletteRequest
+    from starlette.responses import (
+        PlainTextResponse,
+        RedirectResponse,
+        Response as StarletteResponse,
+    )
+
+    HAS_FASTAPI = True
+except ImportError:
+    fastapi: Any = None
+    StarletteRequest: Any = None
+    SessionMiddleware: Any = None
+    HAS_FASTAPI = False
+
+
+# dash-auth-async owns its own request ContextVar, set in its own ASGI
+# middleware — independent of Dash's private get_current_request.
+_current_request_var: ContextVar = ContextVar("dash_auth_request", default=None)
 
 
 class Backend(ABC):
@@ -274,11 +297,125 @@ class QuartBackend(Backend):
         return quart_client.OAuth(server)
 
 
+class FastAPIBackend(Backend):
+    """Adapter for Dash's FastAPI backend (Dash 4.2+).
+
+    Unlike Flask/Quart there is no global request/session proxy: Starlette
+    passes the request explicitly. This backend resolves the active request
+    from a ContextVar set by its own ASGI auth middleware, and reads the
+    session off ``request.session`` (populated by SessionMiddleware).
+    """
+
+    def __init__(self) -> None:
+        """Create the FastAPI backend, requiring the optional ``fastapi`` extra.
+
+        Raises:
+            ImportError: if FastAPI is not installed.
+        """
+        if not HAS_FASTAPI:
+            raise ImportError(
+                "FastAPI is not installed. Please install it with "
+                "`pip install dash-auth-async[fastapi]` to use the FastAPI backend."
+            )
+
+    @property
+    def request(self) -> Any:
+        """The active Starlette request, resolved from the ContextVar.
+
+        Returns:
+            The current request, or None outside a request context.
+        """
+        return _current_request_var.get()
+
+    @property
+    def session(self) -> MutableMapping:
+        """The session mapping off the active request.
+
+        Returns:
+            The Starlette session mapping.
+
+        Raises:
+            RuntimeError: if SessionMiddleware is not installed.
+        """
+        try:
+            return self.request.session
+        except AssertionError as exc:
+            # Starlette asserts SessionMiddleware is installed. Translate to
+            # RuntimeError so existing `except RuntimeError` guards behave
+            # identically to the Flask path.
+            raise RuntimeError(
+                "Session is not available. Have you set a secret key?"
+            ) from exc
+
+    def has_request_context(self) -> bool:  # noqa: PLR6301
+        """Whether a request is currently bound to the ContextVar.
+
+        Returns:
+            True if a request context is active.
+        """
+        return _current_request_var.get() is not None
+
+    def url_for(self, endpoint: str, **values) -> str:
+        """Build an absolute URL for a Starlette endpoint.
+
+        Maps the Flask-style ``_external``/``_scheme`` kwargs used by
+        ``OIDCAuth._create_redirect_uri`` onto Starlette's ``url_for``.
+
+        Returns:
+            The URL string for ``endpoint``.
+        """
+        values.pop("_external", None)  # Starlette url_for is always absolute
+        scheme = values.pop("_scheme", None)
+        url = self.request.url_for(endpoint, **values)
+        if scheme:
+            url = url.replace(scheme=scheme)
+        return str(url)
+
+    def redirect(self, location: str) -> Any:  # noqa: PLR6301
+        """Build a Starlette redirect response to ``location``.
+
+        Returns:
+            A 302 ``RedirectResponse``.
+        """
+        return RedirectResponse(location, status_code=302)
+
+    def current_host(self) -> str:
+        """Host (netloc) of the active request.
+
+        Returns:
+            The request netloc string.
+        """
+        return self.request.url.netloc
+
+    def coerce_response(self, result: Any) -> Any:  # noqa: PLR6301
+        """Build a Starlette response from an ``_authorize`` return value.
+
+        Returns:
+            A Starlette response (passthrough if already one).
+        """
+        if isinstance(result, StarletteResponse):
+            return result
+        if isinstance(result, tuple):
+            body, *rest = result
+            status = rest[0] if rest else 200
+            headers = rest[1] if len(rest) > 1 else None
+            return PlainTextResponse(body, status_code=status, headers=headers)
+        if isinstance(result, str):
+            return PlainTextResponse(result)
+        return PlainTextResponse(str(result))
+
+    def register_auth_hook(self, server, needs_body, decide) -> None:
+        """Register the auth hook (implemented in a later task)."""
+        raise NotImplementedError
+
+
 def detect_backend(server: Any) -> Backend:
-    """Return the matching backend for a Flask or Quart server."""
+    """Return the matching backend for a Flask, Quart, or FastAPI server."""
     if quart is not None:
         if isinstance(server, quart.Quart):
             return QuartBackend()
+    if HAS_FASTAPI and isinstance(server, fastapi.FastAPI):
+        return FastAPIBackend()
     if isinstance(server, flask.Flask):
         return FlaskBackend()
 

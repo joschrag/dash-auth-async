@@ -120,5 +120,10 @@ select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
 quote-style = "double"
 indent-style = "space"
 
+[tool.ruff.lint.isort]
+# Keep aliased imports on the same line as their siblings so a single
+# optional-dependency import guard stays one statement (avoids PLW0717).
+combine-as-imports = true
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
