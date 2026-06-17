@@ -123,3 +123,76 @@ def test_fastapi_backend_url_for_and_redirect():
     assert data["https_url"].startswith("https://")
     assert data["redirect_loc"] == "/target"
     assert data["host"]  # non-empty netloc
+
+
+def _build_app_with_auth(decide, needs_body):
+    """A FastAPI app whose only middleware is the auth hook, plus an echo
+    route that proves the body survives middleware body-consumption."""
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    backend = FastAPIBackend()
+
+    @app.post("/_dash-update-component")
+    async def echo(request: Request):
+        body = await request.json()
+        return {"seen": body, "had_context": backend.has_request_context()}
+
+    @app.get("/open")
+    async def open_route():
+        return {"ok": True}
+
+    backend.register_auth_hook(app, needs_body, decide)
+    return app
+
+
+def test_auth_hook_allows_when_decide_returns_none():
+    from fastapi.testclient import TestClient
+
+    calls = []
+
+    def decide(path, body):
+        calls.append((path, body))
+
+    app = _build_app_with_auth(
+        decide, needs_body=lambda p: p == "/_dash-update-component"
+    )
+    client = TestClient(app)
+
+    r = client.post("/_dash-update-component", json={"output": "x", "inputs": []})
+    assert r.status_code == 200
+    # Body was replayed: the downstream route still parsed it.
+    assert r.json()["seen"] == {"output": "x", "inputs": []}
+    assert r.json()["had_context"] is True
+    # decide saw the parsed body for the callback route.
+    assert calls == [("/_dash-update-component", {"output": "x", "inputs": []})]
+
+
+def test_auth_hook_short_circuits_with_tuple():
+    from fastapi.testclient import TestClient
+
+    def decide(path, body):
+        return ("Login Required", 401, {"WWW-Authenticate": 'Basic realm="x"'})
+
+    app = _build_app_with_auth(decide, needs_body=lambda p: False)
+    client = TestClient(app)
+
+    r = client.get("/open")
+    assert r.status_code == 401
+    assert r.headers["WWW-Authenticate"] == 'Basic realm="x"'
+    assert r.text == "Login Required"
+
+
+def test_auth_hook_awaits_coroutine_results():
+    from fastapi.testclient import TestClient
+    from starlette.responses import PlainTextResponse
+
+    async def decide(path, body):
+        return PlainTextResponse("async-block", status_code=403)
+
+    app = _build_app_with_auth(decide, needs_body=lambda p: False)
+    client = TestClient(app)
+
+    r = client.get("/open")
+    assert r.status_code == 403
+    assert r.text == "async-block"

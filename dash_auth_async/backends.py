@@ -405,8 +405,62 @@ class FastAPIBackend(Backend):
         return PlainTextResponse(str(result))
 
     def register_auth_hook(self, server, needs_body, decide) -> None:
-        """Register the auth hook (implemented in a later task)."""
-        raise NotImplementedError
+        """Register the before-request auth hook as pure-ASGI middleware.
+
+        Pure ASGI (not ``BaseHTTPMiddleware``) so the request ContextVar set
+        here is visible inside the Dash callback, which runs in the same
+        task/context via the inner DashMiddleware's ``copy_context()``.
+        """
+        backend = self
+
+        class _AuthMiddleware:
+            def __init__(self, app) -> None:
+                self.app = app
+
+            async def __call__(self, scope, receive, send) -> None:
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
+
+                request = StarletteRequest(scope, receive)
+                token = _current_request_var.set(request)
+                try:
+                    body = None
+                    downstream_receive = receive
+                    if needs_body(request.url.path):
+                        # Consuming the body drains the receive stream; cache
+                        # the bytes and replay them so DashMiddleware (inner)
+                        # can re-parse the callback JSON.
+                        raw = await request.body()
+
+                        # Must be a coroutine to satisfy the ASGI `receive`
+                        # interface, even though this replay never awaits.
+                        async def downstream_receive():  # noqa: RUF029
+                            return {
+                                "type": "http.request",
+                                "body": raw,
+                                "more_body": False,
+                            }
+
+                        try:
+                            body = await request.json()
+                        except Exception:  # unparseable == no body
+                            body = None
+
+                    result = decide(request.url.path, body)
+                    if inspect.isawaitable(result):
+                        result = await result
+
+                    if result is not None:
+                        response = backend.coerce_response(result)
+                        await response(scope, receive, send)
+                        return
+
+                    await self.app(scope, downstream_receive, send)
+                finally:
+                    _current_request_var.reset(token)
+
+        server.add_middleware(_AuthMiddleware)
 
 
 def detect_backend(server: Any) -> Backend:
