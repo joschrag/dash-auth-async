@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable, MutableMapping
 from contextvars import ContextVar
@@ -122,6 +123,14 @@ class Backend(ABC):
             The request host string.
         """
         return self.request.host
+
+    def current_path(self) -> str:
+        """Path of the active request.
+
+        Returns:
+            The request path string.
+        """
+        return self.request.path
 
     def add_route(  # noqa: PLR6301
         self, server, rule: str, view_func, endpoint: str, methods
@@ -405,6 +414,14 @@ class FastAPIBackend(Backend):
         """
         return self.request.url.netloc
 
+    def current_path(self) -> str:
+        """Path of the active Starlette request.
+
+        Returns:
+            The request path string.
+        """
+        return self.request.url.path
+
     def coerce_response(self, result: Any) -> Any:  # noqa: PLR6301
         """Build a Starlette response from an ``_authorize`` return value.
 
@@ -462,6 +479,35 @@ class FastAPIBackend(Backend):
             The stored value, or ``default`` when unset.
         """
         return getattr(server.state, key, default)
+
+    def add_route(  # noqa: PLR6301
+        self, server, rule: str, view_func, endpoint: str, methods
+    ) -> None:
+        """Register an OIDC route, translating Flask ``<idp>`` to ``{idp}``."""
+        fastapi_rule = re.sub(r"<([^>]+)>", r"{\1}", rule)
+        server.add_api_route(
+            fastapi_rule,
+            view_func,
+            methods=methods,
+            name=endpoint,
+            include_in_schema=False,
+        )
+
+    def make_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Build authlib's Starlette OAuth registry, stashed on ``server.state``.
+
+        Returns:
+            A ``starlette_client`` ``OAuth`` registry.
+        """
+        from authlib.integrations.starlette_client import (  # noqa: PLC0415
+            OAuth as StarletteOAuth,
+        )
+
+        oauth = StarletteOAuth()
+        # The Starlette registry doesn't attach to app.extensions, so stash
+        # it where get_oauth can find it.
+        server.state.dash_auth_oauth = oauth
+        return oauth
 
     def register_auth_hook(self, server, needs_body, decide) -> None:
         """Register the before-request auth hook as pure-ASGI middleware.
