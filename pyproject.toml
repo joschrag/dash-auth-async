@@ -66,7 +66,13 @@ dev = [
     "ruff>=0.15.16",
     "pytest-cov>=7.1.0",
     "websocket-client>=1.9.0",
-    "requests[security]>=2.34.2"
+    "requests[security]>=2.34.2",
+    "fastapi",
+    "starlette",
+    "uvicorn",
+    "httpx>=0.23.0",
+    "itsdangerous",
+    "python-multipart"
 ]
 
 [tool.uv]
