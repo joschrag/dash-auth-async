@@ -225,3 +225,14 @@ def test_setup_session_noop_without_secret_key():
     app = FastAPI()
     backend.setup_session(app, None)
     assert backend.session_configured(app) is False
+
+
+def test_config_store_read_roundtrip_via_state():
+    from fastapi import FastAPI
+
+    backend = FastAPIBackend()
+    app = FastAPI()  # FastAPI has no .config, only .state
+
+    assert backend.read_config(app, "PUBLIC_ROUTES", "fallback") == "fallback"
+    backend.store_config(app, "PUBLIC_ROUTES", ["/home"])
+    assert backend.read_config(app, "PUBLIC_ROUTES") == ["/home"]

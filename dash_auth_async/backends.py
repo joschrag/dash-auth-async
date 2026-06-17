@@ -141,6 +141,24 @@ class Backend(ABC):
 
         return OAuth(server)
 
+    def store_config(self, server, key: str, value: Any) -> None:  # noqa: PLR6301
+        """Stash an app-scoped config value (public routes/callbacks).
+
+        Flask/Quart expose a dict-like ``server.config``. FastAPI has no
+        such attribute and overrides this to use ``server.state``.
+        """
+        server.config[key] = value
+
+    def read_config(  # noqa: PLR6301
+        self, server, key: str, default: Any = None
+    ) -> Any:
+        """Read an app-scoped config value set by :meth:`store_config`.
+
+        Returns:
+            The stored value, or ``default`` when unset.
+        """
+        return server.config.get(key, default)
+
 
 class FlaskBackend(Backend):
     """Backend adapter for a Flask server."""
@@ -430,6 +448,20 @@ class FastAPIBackend(Backend):
             True if session storage is available.
         """
         return self._has_session_middleware(server)
+
+    def store_config(self, server, key: str, value: Any) -> None:  # noqa: PLR6301
+        """Stash an app-scoped config value on the FastAPI ``server.state``."""
+        setattr(server.state, key, value)
+
+    def read_config(  # noqa: PLR6301
+        self, server, key: str, default: Any = None
+    ) -> Any:
+        """Read an app-scoped config value off the FastAPI ``server.state``.
+
+        Returns:
+            The stored value, or ``default`` when unset.
+        """
+        return getattr(server.state, key, default)
 
     def register_auth_hook(self, server, needs_body, decide) -> None:
         """Register the before-request auth hook as pure-ASGI middleware.
