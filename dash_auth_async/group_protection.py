@@ -39,7 +39,12 @@ def _current_user() -> dict | None:
     backend = get_active_backend()
     if backend.has_request_context():
         # Normal HTTP path: read the user from the framework session.
-        return backend.session.get("user")
+        try:
+            return backend.session.get("user")
+        except RuntimeError:
+            # Session unavailable (e.g. FastAPI without SessionMiddleware):
+            # treat as not authenticated rather than crashing.
+            return None
     # WebSocket worker path: no framework context here, so read the user the
     # websocket_message hook stashed for this dispatch.
     return _WS_AUTH_USER.get()
