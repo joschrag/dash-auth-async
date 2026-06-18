@@ -104,6 +104,9 @@ def _send_callback_request(ws_url, origin, output, comp_id, in_id, cookie=None):
     header = [f"Origin: {origin}"]
     if cookie:
         header.append(f"Cookie: {cookie}")
+    # suppress_origin: FastAPI/Uvicorn rejects a duplicate ``Origin`` header with
+    # HTTP 400 (Quart is lenient), and websocket-client injects its own by
+    # default -- suppress it so only our explicit Origin reaches the server.
     conn = websocket.create_connection(
         ws_url, header=header, timeout=8, suppress_origin=True
     )
