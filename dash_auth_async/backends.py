@@ -668,10 +668,20 @@ class FastAPIBackend(Backend):
                         # the bytes and replay them so DashMiddleware (inner)
                         # can re-parse the callback JSON.
                         raw = await request.body()
+                        body_replayed = False
 
                         # Must be a coroutine to satisfy the ASGI `receive`
                         # interface, even though this replay never awaits.
                         async def downstream_receive():  # noqa: RUF029
+                            nonlocal body_replayed
+                            if body_replayed:
+                                # Body already delivered; further reads see a
+                                # disconnect, per the ASGI contract — not the
+                                # same body event replayed forever (which would
+                                # spin an app that polls receive() to detect
+                                # client disconnect).
+                                return {"type": "http.disconnect"}
+                            body_replayed = True
                             return {
                                 "type": "http.request",
                                 "body": raw,
