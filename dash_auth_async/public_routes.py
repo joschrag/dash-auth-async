@@ -9,7 +9,7 @@ from dash import Dash, callback, get_app
 from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
 from werkzeug.routing import Map, MapAdapter, Rule
 
-from .backends import get_active_backend
+from .backends import detect_backend, get_active_backend
 
 DASH_PUBLIC_ASSETS_EXTENSIONS = "js,css"
 BASE_PUBLIC_ROUTES = [
@@ -109,10 +109,11 @@ def public_callback(*callback_args, **callback_kwargs):
         )
         try:
             app = get_app()
-            get_active_backend().store_config(
+            backend = detect_backend(app.server)
+            backend.store_config(
                 app.server,
                 PUBLIC_CALLBACKS,
-                [*get_public_callbacks(app), callback_id],
+                [*backend.read_config(app.server, PUBLIC_CALLBACKS, []), callback_id],
             )
         except Exception:
             print(

@@ -218,6 +218,19 @@ class Backend(ABC):
         """
         return server.config.get(key, default)
 
+    def ws_identity(self, ws) -> tuple[Any, dict | None]:
+        """Resolve ``(owning_server, session_user)`` for a WS callback_request.
+
+        WS-capable backends override this. The owning server is the key into
+        ``_AUTH_BY_SERVER``; the user is ``session["user"]`` or ``None``.
+        Flask has no WebSocket transport, so the default raises -- the WS hook's
+        fail-closed boundary turns that into a rejection if it is ever reached.
+
+        Raises:
+            NotImplementedError: on backends without WebSocket support.
+        """
+        raise NotImplementedError
+
 
 class FlaskBackend(Backend):
     """Backend adapter for a Flask server."""
@@ -402,6 +415,23 @@ class QuartBackend(Backend):
             The token.
         """
         return await client.authorize_access_token(**kwargs)
+
+    def ws_identity(self, ws) -> tuple[Any, dict | None]:  # noqa: PLR6301
+        """Resolve the Quart app and session user for a WS callback_request.
+
+        Uses Quart's context globals (correct when several apps share a
+        process); ``ws`` is unused on this backend.
+
+        Returns:
+            ``(quart_app, session["user"] or None)``.
+        """
+        import quart  # noqa: PLC0415 — quart is an optional dependency
+
+        # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
+        # the real Quart app (the key in ``_AUTH_BY_SERVER``). Go through
+        # ``getattr`` because the attribute is absent from the proxy's type stub.
+        app = getattr(quart.current_app, "_get_current_object")()
+        return app, quart.session.get("user")
 
 
 class FastAPIBackend(Backend):
@@ -639,6 +669,22 @@ class FastAPIBackend(Backend):
             The token.
         """
         return await client.authorize_access_token(self.request, **kwargs)
+
+    def ws_identity(self, ws) -> tuple[Any, dict | None]:  # noqa: PLR6301
+        """Resolve the FastAPI app and session user for a WS callback_request.
+
+        Reads from the Starlette ``WebSocket``: ``ws.app`` is the owning server
+        and ``ws.session`` carries ``session["user"]`` (SessionMiddleware runs on
+        websocket scopes, so the handshake cookie is available). The
+        ``"session" in ws.scope`` guard mirrors the ``session`` property: with no
+        SessionMiddleware installed the user is ``None`` (fail-closed for
+        protected callbacks, still allows public) rather than raising.
+
+        Returns:
+            ``(fastapi_app, session["user"] or None)``.
+        """
+        user = ws.session.get("user") if "session" in ws.scope else None
+        return ws.app, user
 
     def register_auth_hook(self, server, needs_body, decide) -> None:
         """Register the before-request auth hook as pure-ASGI middleware.
