@@ -130,11 +130,24 @@ class _Server:
     """Weak-referenceable stand-in for an app.server (the registry key)."""
 
 
+class _DashAppStub:
+    """Minimal Dash-app double exposing the idempotent ``_setup_server`` the hook
+    calls to migrate ``callback_map`` lazily on the first WS ``callback_request``.
+    """
+
+    def __init__(self) -> None:
+        self.setup_calls = 0
+
+    def _setup_server(self) -> None:
+        self.setup_calls += 1
+
+
 class _RecordingAuth:
     """Auth double that records the calls the hook routes to it."""
 
     def __init__(self) -> None:
         self.calls: list = []
+        self.app = _DashAppStub()
 
     def authorize_ws(self, payload, user) -> bool:
         self.calls.append((payload, user))
@@ -146,11 +159,17 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
     Auth registered for ``quart.current_app`` -- not some other app's Auth.
     """
     quart = pytest.importorskip("quart")
+    from dash_auth_async.backends import QuartBackend, set_active_backend
     from dash_auth_async.websocket_auth import (
         _AUTH_BY_SERVER,
         _WS_AUTH_USER,
         _ws_message_hook,
     )
+
+    # The hook resolves identity via the active backend; this is the Quart path
+    # (ws_identity reads the quart.current_app/quart.session monkeypatched below).
+    # The autouse reset_active_backend fixture clears it after the test.
+    set_active_backend(QuartBackend())
 
     server_a, server_b = _Server(), _Server()
     auth_a, auth_b = _RecordingAuth(), _RecordingAuth()
@@ -174,6 +193,10 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
         # Only app B's Auth was consulted, with app B's session user.
         assert auth_b.calls == [({"output": "x.children"}, user)]
         assert auth_a.calls == []
+        # The hook migrated only app B's callback_map (lazy, idempotent), and
+        # never touched app A's.
+        assert auth_b.app.setup_calls == 1
+        assert auth_a.app.setup_calls == 0
         # The resolved user was stashed for the worker.
         assert _WS_AUTH_USER.get() == user
     finally:
