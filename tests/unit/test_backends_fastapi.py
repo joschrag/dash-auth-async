@@ -213,6 +213,105 @@ def test_auth_hook_awaits_coroutine_results():
     assert r.text == "async-block"
 
 
+def test_auth_hook_unparseable_body_is_treated_as_none():
+    # Fail-closed path: malformed JSON on a needs_body route must reach decide
+    # as None (the `except Exception: body = None` branch), not raise a 500.
+    from fastapi.testclient import TestClient
+
+    seen = []
+
+    def decide(path, body):
+        seen.append(body)
+        return ("Unauthorized", 401) if body is None else None
+
+    app = _build_app_with_auth(
+        decide, needs_body=lambda p: p == "/_dash-update-component"
+    )
+    client = TestClient(app)
+
+    r = client.post(
+        "/_dash-update-component",
+        content="{ not valid json",
+        headers={"content-type": "application/json"},
+    )
+    assert seen == [None]
+    assert r.status_code == 401
+    assert r.text == "Unauthorized"
+
+
+def test_auth_hook_short_circuits_after_parsing_body():
+    # The other short-circuit branch: decide returns non-None *when needs_body
+    # is True*, so the body is parsed first and then the request is blocked.
+    from fastapi.testclient import TestClient
+
+    seen = []
+
+    def decide(path, body):
+        seen.append(body)
+        return ("Login Required", 401)
+
+    app = _build_app_with_auth(decide, needs_body=lambda p: True)
+    client = TestClient(app)
+
+    r = client.post("/_dash-update-component", json={"output": "x", "inputs": []})
+    assert r.status_code == 401
+    assert r.text == "Login Required"
+    # decide saw the parsed body — it ran after body parsing, not before.
+    assert seen == [{"output": "x", "inputs": []}]
+
+
+def test_downstream_receive_emits_disconnect_after_body():
+    # The replayed receive must deliver the cached body once, then signal
+    # http.disconnect — an app that polls receive() after the body (to detect
+    # disconnect) must not get the same body event forever.
+    import asyncio
+
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    backend = FastAPIBackend()
+    backend.register_auth_hook(
+        app, needs_body=lambda p: True, decide=lambda path, body: None
+    )
+    # add_middleware prepends; our auth middleware is the only/outermost one.
+    auth_middleware_cls = app.user_middleware[0].cls
+
+    received = []
+
+    async def inner_app(scope, receive, send):
+        received.append(await receive())  # cached body
+        received.append(await receive())  # past the body → disconnect
+
+    middleware = auth_middleware_cls(inner_app)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/_dash-update-component",
+        "headers": [(b"content-type", b"application/json")],
+        "query_string": b"",
+    }
+
+    async def receive():
+        return {
+            "type": "http.request",
+            "body": b'{"output": "x", "inputs": []}',
+            "more_body": False,
+        }
+
+    async def send(_message):
+        pass
+
+    async def drive():
+        await middleware(scope, receive, send)
+
+    asyncio.run(drive())
+
+    assert received[0]["type"] == "http.request"
+    assert received[0]["body"] == b'{"output": "x", "inputs": []}'
+    assert received[1] == {"type": "http.disconnect"}
+
+
 def test_setup_session_adds_session_middleware_once():
     from fastapi import FastAPI
     from starlette.middleware.sessions import SessionMiddleware
