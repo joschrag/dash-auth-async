@@ -99,14 +99,20 @@ class Backend(ABC):
         """
         return result
 
-    def setup_session(self, server, secret_key: str | None) -> None:  # noqa: PLR6301
+    def setup_session(  # noqa: PLR6301
+        self, server, secret_key: str | None, secure_session: bool = False
+    ) -> None:
         """Install session support on the server.
 
-        Flask/Quart store a ``secret_key`` attribute. FastAPI overrides
-        this to add ``SessionMiddleware``.
+        Flask/Quart store a ``secret_key`` attribute and harden the session
+        cookie via ``SESSION_COOKIE_*`` config. FastAPI overrides this to add
+        ``SessionMiddleware`` (and wires ``secure_session`` to ``https_only``).
         """
         if secret_key is not None:
             server.secret_key = secret_key
+        if secure_session:
+            server.config["SESSION_COOKIE_SECURE"] = True
+            server.config["SESSION_COOKIE_HTTPONLY"] = True
 
     def session_configured(self, server) -> bool:  # noqa: PLR6301
         """Whether the server can store a session.
@@ -364,15 +370,15 @@ class FastAPIBackend(Backend):
         Raises:
             RuntimeError: if SessionMiddleware is not installed.
         """
-        try:
-            return self.request.session
-        except AssertionError as exc:
-            # Starlette asserts SessionMiddleware is installed. Translate to
-            # RuntimeError so existing `except RuntimeError` guards behave
-            # identically to the Flask path.
-            raise RuntimeError(
-                "Session is not available. Have you set a secret key?"
-            ) from exc
+        # Starlette signals "no SessionMiddleware" via a bare `assert
+        # "session" in scope`, which `python -O` strips — the next line then
+        # raises KeyError instead. Check the scope directly so the
+        # RuntimeError translation holds under -O too, keeping the existing
+        # `except RuntimeError` guards working identically to the Flask path.
+        request = self.request
+        if "session" not in getattr(request, "scope", {}):
+            raise RuntimeError("Session is not available. Have you set a secret key?")
+        return request.session
 
     def has_request_context(self) -> bool:  # noqa: PLR6301
         """Whether a request is currently bound to the ContextVar.
@@ -446,17 +452,24 @@ class FastAPIBackend(Backend):
             for m in getattr(server, "user_middleware", [])
         )
 
-    def setup_session(self, server, secret_key: str | None) -> None:
+    def setup_session(
+        self, server, secret_key: str | None, secure_session: bool = False
+    ) -> None:
         """Install Starlette ``SessionMiddleware`` from ``secret_key``.
 
-        Defers to a user-installed ``SessionMiddleware`` (opt-out/override)
-        and is idempotent — never adds a second instance.
+        ``secure_session`` is wired to ``https_only`` so the parity with
+        Flask/Quart's ``SESSION_COOKIE_SECURE`` is honored rather than
+        silently dropped. Starlette always sets ``HttpOnly``. Defers to a
+        user-installed ``SessionMiddleware`` (opt-out/override) and is
+        idempotent — never adds a second instance.
         """
         if secret_key is None:
             return
         if self._has_session_middleware(server):
             return
-        server.add_middleware(SessionMiddleware, secret_key=secret_key)
+        server.add_middleware(
+            SessionMiddleware, secret_key=secret_key, https_only=secure_session
+        )
 
     def session_configured(self, server) -> bool:
         """Whether a ``SessionMiddleware`` is installed on the server.

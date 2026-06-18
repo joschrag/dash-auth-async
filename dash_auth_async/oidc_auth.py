@@ -91,9 +91,10 @@ class OIDCAuth(Auth):
             Page seen by the user after logging out,
             by default None which will default to a simple logged out message
         secure_session: bool, optional
-            Whether to ensure the session is secure, setting the flasck config
-            SESSION_COOKIE_SECURE and SESSION_COOKIE_HTTPONLY to True,
-            by default False
+            Whether to restrict the session cookie to HTTPS, by default False.
+            On Flask/Quart this sets SESSION_COOKIE_SECURE and
+            SESSION_COOKIE_HTTPONLY; on FastAPI it sets the Starlette
+            SessionMiddleware ``https_only`` flag (HttpOnly is always on).
 
         Raises:
             RuntimeError: if ``app.server.secret_key`` is not defined.
@@ -116,7 +117,7 @@ class OIDCAuth(Auth):
         self.idp_selection_route = idp_selection_route
         self.logout_page = logout_page
 
-        self.backend.setup_session(app.server, secret_key)
+        self.backend.setup_session(app.server, secret_key, secure_session)
 
         if not self.backend.session_configured(app.server):
             raise RuntimeError("""
@@ -133,10 +134,6 @@ class OIDCAuth(Auth):
                 you should create a key and then assign the value of
                 that key in your code/via a secret.
                 """)
-
-        if secure_session and hasattr(app.server, "config"):
-            app.server.config["SESSION_COOKIE_SECURE"] = True
-            app.server.config["SESSION_COOKIE_HTTPONLY"] = True
 
         self.oauth = self.backend.make_oauth(app.server)
 

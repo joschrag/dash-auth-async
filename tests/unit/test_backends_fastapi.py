@@ -63,6 +63,16 @@ def test_session_without_middleware_raises_runtimeerror():
         _current_request_var.reset(token)
 
 
+def test_session_off_request_raises_runtimeerror():
+    # request is None outside any request context. The scope-based check
+    # must surface RuntimeError (a caught, "not authenticated" signal), not
+    # an AttributeError on None — and never relies on a -O-stripped assert.
+    backend = FastAPIBackend()
+    assert backend.request is None
+    with pytest.raises(RuntimeError):
+        _ = backend.session
+
+
 def test_session_present_returns_mapping():
     backend = FastAPIBackend()
     req = _bare_request(session={"user": {"email": "a.b@mail.com"}})
@@ -216,6 +226,23 @@ def test_setup_session_adds_session_middleware_once():
     backend.setup_session(app, "Test!")
     count = sum(1 for m in app.user_middleware if m.cls is SessionMiddleware)
     assert count == 1
+
+
+def test_setup_session_wires_secure_session_to_https_only():
+    from fastapi import FastAPI
+    from starlette.middleware.sessions import SessionMiddleware
+
+    backend = FastAPIBackend()
+
+    insecure = FastAPI()
+    backend.setup_session(insecure, "Test!")
+    sm = next(m for m in insecure.user_middleware if m.cls is SessionMiddleware)
+    assert sm.kwargs.get("https_only") is False
+
+    secure = FastAPI()
+    backend.setup_session(secure, "Test!", secure_session=True)
+    sm = next(m for m in secure.user_middleware if m.cls is SessionMiddleware)
+    assert sm.kwargs.get("https_only") is True
 
 
 def test_setup_session_noop_without_secret_key():
