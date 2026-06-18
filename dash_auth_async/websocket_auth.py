@@ -72,7 +72,7 @@ def _ws_message_hook(ws: Any, message: Any):
 def _authorize_ws_message(ws: Any, message: dict) -> bool | tuple[int, str]:
     """Authorize one WebSocket ``callback_request`` for the owning app.
 
-    The owning app and the session user are resolved through the active
+    The owning server and the session user are resolved through the active
     backend's :meth:`Backend.ws_identity` (Quart uses its context globals,
     FastAPI reads ``ws.app``/``ws.session``), keeping this module
     framework-agnostic. Inert for apps that do not use dash-auth-async.
@@ -81,13 +81,24 @@ def _authorize_ws_message(ws: Any, message: dict) -> bool | tuple[int, str]:
         ``True`` to allow, or a ``(code, reason)`` tuple to reject the socket.
     """
     backend = get_active_backend()
-    app, user = backend.ws_identity(ws)
-    auth = _AUTH_BY_SERVER.get(app)
+    server, user = backend.ws_identity(ws)
+    auth = _AUTH_BY_SERVER.get(server)
     if auth is None:
         # Not a dash-auth-async app: nothing to enforce. Safe because the
         # registry entry is created by the developer's ``Auth(app, ...)`` call,
         # not by the client -- an attacker cannot evict their own app.
         return True
+    # Migrate Dash's GLOBAL_CALLBACK_MAP into app.callback_map before Dash
+    # validates this request against it -- validation runs *after* the
+    # websocket_message hooks return (see _fastapi.py / _quart.py). On FastAPI
+    # our auth middleware can short-circuit the page/readiness GET with a 401
+    # before Dash's own _setup_server before-hook ever runs, so a WS-first
+    # client would otherwise hit an empty map ("Callback function not found").
+    # Doing it here is lazy (fires on the first real WS message, after every
+    # module-level @callback is registered -- so unlike a construction-time
+    # call it never freezes the map early) and idempotent (a self-guarded flag
+    # makes every call after the first a single boolean check).
+    auth.app._setup_server()
     payload = message.get("payload", {}) or {}
     if auth.authorize_ws(payload, user):
         # Load-bearing invariant: this hook runs before every callback_request
@@ -115,17 +126,13 @@ def enable_ws_auth(auth: Any, app: Any) -> None:
     """Wire WebSocket auth for a dash-auth-async app.
 
     No-op on backends without WebSocket support (e.g. Flask). For WS-capable
-    backends it records the app->Auth mapping, installs the context-copying
+    backends it records the server->Auth mapping, installs the context-copying
     executor (before any dispatch), and registers the global hook once.
 
-    Also ensures ``app._setup_server()`` has run so that Dash's
-    ``GLOBAL_CALLBACK_MAP`` is migrated into ``app.callback_map`` before
-    WebSocket callbacks are dispatched. On ASGI backends (FastAPI) the auth
-    middleware short-circuits HTTP requests before the inner ``DashMiddleware``
-    can run ``_setup_server`` as a before-request hook -- a WS-only client
-    (no prior authenticated HTTP request) would otherwise hit an empty
-    ``callback_map`` and see ``"Callback function not found"``.
-    ``_setup_server`` is idempotent; calling it early is safe.
+    Note Dash's ``callback_map`` is *not* populated here. It is migrated lazily
+    on the first WS ``callback_request`` by the message hook (see
+    ``_authorize_ws_message``), so a global ``@callback`` registered after
+    ``Auth(...)`` is still picked up and the server is never set up twice.
     """
     backend = getattr(app, "backend", None)
     if backend is None or not getattr(backend, "websocket_capability", False):
@@ -139,10 +146,5 @@ def enable_ws_auth(auth: Any, app: Any) -> None:
         backend._callback_executor = _ContextCopyingExecutor(
             thread_name_prefix="dash-callback-"
         )
-
-    # Ensure the callback map is populated before the first WS dispatch.
-    setup = getattr(app, "_setup_server", None)
-    if callable(setup):
-        setup()
 
     _ensure_hook_registered()
