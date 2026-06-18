@@ -600,7 +600,6 @@ def detect_backend(server: Any) -> Backend:
 
 # One backend per process, matching how Dash apps are deployed.
 _active_backend: Backend | None = None
-_DEFAULT_BACKEND = FlaskBackend()
 
 
 def set_active_backend(backend: Backend) -> None:
@@ -614,5 +613,16 @@ def set_active_backend(backend: Backend) -> None:
 
 
 def get_active_backend() -> Backend:
-    """Return the active backend, defaulting to Flask when none is set."""
-    return _active_backend if _active_backend is not None else _DEFAULT_BACKEND
+    """Return the active backend registered by ``Auth.__init__``.
+
+    Falls back to a Flask backend for the legacy Flask-only path where no
+    ``Auth`` has registered one yet. The fallback is constructed lazily on
+    first use rather than at import, so Flask isn't cemented as the default
+    at module load. Note this still assumes a single backend per process: in
+    a non-Flask process the active backend must be set (which ``Auth.__init__``
+    does) before any request-context helper runs.
+    """
+    global _active_backend  # noqa: PLW0603 — one backend per process, by design
+    if _active_backend is None:
+        _active_backend = FlaskBackend()
+    return _active_backend

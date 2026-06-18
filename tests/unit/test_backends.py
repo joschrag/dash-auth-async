@@ -1,9 +1,11 @@
 from dash import Dash
 
+from dash_auth_async import backends
 from dash_auth_async.backends import (
     FlaskBackend,
     detect_backend,
     get_active_backend,
+    set_active_backend,
 )
 
 
@@ -14,6 +16,21 @@ def test_detect_backend_flask():
 
 def test_active_backend_defaults_to_flask():
     assert isinstance(get_active_backend(), FlaskBackend)
+
+
+def test_set_active_backend_overrides_default():
+    sentinel = FlaskBackend()
+    set_active_backend(sentinel)
+    # The process-global helper returns exactly what Auth.__init__ registered,
+    # not a freshly detected backend — this is the cache public_routes reads.
+    assert get_active_backend() is sentinel
+
+
+def test_default_backend_is_not_constructed_eagerly_at_import():
+    # B2: the Flask fallback is built lazily inside get_active_backend(), not
+    # as a module-level _DEFAULT_BACKEND at import, so Flask isn't cemented as
+    # the default at module load in a non-Flask process.
+    assert not hasattr(backends, "_DEFAULT_BACKEND")
 
 
 def test_flask_backend_url_for_and_redirect():
