@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from dash import Dash
+from dash import Dash, dcc, html
 
 from dash_auth_async import OIDCAuth
 from dash_auth_async.oidc_auth import get_oauth
@@ -16,6 +16,9 @@ _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 def _make_oidc_app():
     app = Dash(__name__, backend="quart")
+    app.layout = html.Div(
+        [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
+    )
     oidc = OIDCAuth(app, secret_key="Test")
     oidc.register_provider(
         "idp",
