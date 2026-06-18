@@ -14,7 +14,7 @@ from werkzeug.routing import Map, Rule
 from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 
-from .backends import FastAPIBackend, QuartBackend, StarletteRequest
+from .backends import detect_backend
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
@@ -143,11 +143,7 @@ class OIDCAuth(Auth):
         if not re.findall(r"/<idp>(?=/|$)", callback_route):
             raise Exception("The callback route must contain a <idp> placeholder.")
 
-        if isinstance(self.backend, FastAPIBackend):
-            login_view = self._login_request_fastapi
-            logout_view = self._logout_fastapi
-            callback_view = self._callback_fastapi
-        elif isinstance(self.backend, QuartBackend):
+        if self.backend.is_async:
             login_view = self._login_request_async
             logout_view = self._logout_async
             callback_view = self._callback_async
@@ -281,9 +277,8 @@ class OIDCAuth(Auth):
         """
         # `idp` can be none here as login_request is called
         # without arguments in the before_request hook
-        if isinstance(self.backend, FastAPIBackend):
-            return self._login_request_fastapi(self.request, idp)
-        if isinstance(self.backend, QuartBackend):
+        if self.backend.is_async:
+            # Returns a coroutine; the async before-request hook / route awaits it.
             return self._login_request_async(idp)
 
         idp, response = self._resolve_idp(idp)
@@ -293,28 +288,34 @@ class OIDCAuth(Auth):
         redirect_uri = self._create_redirect_uri(idp)
         oauth_client = self.get_oauth_client(idp)
         oauth_kwargs = self.get_oauth_kwargs(idp)
-        return oauth_client.authorize_redirect(
+        return self.backend.oauth_authorize_redirect(
+            oauth_client,
             redirect_uri,
             **oauth_kwargs.get("authorize_redirect_kwargs", {}),
         )
 
     async def _login_request_async(self, idp: str | None = None):
-        """Async login view for the Quart path.
+        """Async login view shared by the Quart and FastAPI paths.
+
+        Backend-agnostic: the backend supplies the (possibly request-injecting)
+        authlib call and coerces the result to a framework response.
 
         Returns:
             The authorize-redirect response.
         """
         idp, response = self._resolve_idp(idp)
         if response is not None:
-            return response
+            return self.backend.coerce_response(response)
 
         redirect_uri = self._create_redirect_uri(idp)
         oauth_client = self.get_oauth_client(idp)
         oauth_kwargs = self.get_oauth_kwargs(idp)
-        return await oauth_client.authorize_redirect(
+        result = await self.backend.oauth_authorize_redirect(
+            oauth_client,
             redirect_uri,
             **oauth_kwargs.get("authorize_redirect_kwargs", {}),
         )
+        return self.backend.coerce_response(result)
 
     def logout(self):  # pylint: disable=C0116
         """Logout the user.
@@ -337,12 +338,15 @@ class OIDCAuth(Auth):
         return page
 
     async def _logout_async(self):
-        """Async logout view for the Quart path; the body is sync.
+        """Async logout view shared by the Quart and FastAPI paths.
+
+        The body is sync; the backend coerces the HTML page to a framework
+        response (passthrough on Quart, ``HTMLResponse`` on FastAPI).
 
         Returns:
-            The logged-out page content.
+            The logged-out page response.
         """
-        return self.logout()
+        return self.backend.coerce_response(self.logout())
 
     def callback(self, idp: str):  # pylint: disable=C0116
         """Handle the OIDC dance and post-login actions.
@@ -356,7 +360,8 @@ class OIDCAuth(Auth):
         oauth_client = self.get_oauth_client(idp)
         oauth_kwargs = self.get_oauth_kwargs(idp)
         try:
-            token = oauth_client.authorize_access_token(
+            token = self.backend.oauth_authorize_access_token(
+                oauth_client,
                 **oauth_kwargs.get("authorize_token_kwargs", {}),
             )
         except OAuthError as err:
@@ -366,66 +371,10 @@ class OIDCAuth(Auth):
         return self.after_logged_in(user, idp, token)
 
     async def _callback_async(self, idp: str):
-        """Async OIDC callback view for the Quart path.
+        """Async OIDC callback view shared by the Quart and FastAPI paths.
 
-        Returns:
-            The post-login redirect, or an error tuple on failure.
-        """
-        if idp not in self.oauth._registry:
-            return f"'{idp}' is not a valid registered idp", 400
-
-        oauth_client = self.get_oauth_client(idp)
-        oauth_kwargs = self.get_oauth_kwargs(idp)
-        try:
-            token = await oauth_client.authorize_access_token(
-                **oauth_kwargs.get("authorize_token_kwargs", {}),
-            )
-        except OAuthError as err:
-            return str(err), 401
-
-        user = token.get("userinfo")
-        return self.after_logged_in(user, idp, token)
-
-    async def _login_request_fastapi(
-        self, request: StarletteRequest, idp: str | None = None
-    ):
-        """Async login view for the FastAPI path.
-
-        Registered as a route (FastAPI injects ``request`` and the ``{idp}``
-        path param) and also called from the before-request middleware with
-        ``request`` resolved from the ContextVar (idp is None there).
-
-        Returns:
-            The authorize-redirect response, or an error response.
-        """
-        idp, response = self._resolve_idp(idp)
-        if response is not None:
-            return self.backend.coerce_response(response)
-
-        redirect_uri = self._create_redirect_uri(idp)
-        oauth_client = self.get_oauth_client(idp)
-        oauth_kwargs = self.get_oauth_kwargs(idp)
-        return await oauth_client.authorize_redirect(
-            request,
-            redirect_uri,
-            **oauth_kwargs.get("authorize_redirect_kwargs", {}),
-        )
-
-    async def _logout_fastapi(self, request: StarletteRequest):
-        """Async logout view for the FastAPI path.
-
-        Returns:
-            The logged-out page response.
-        """
-        page = self.logout()  # clears self.session (ContextVar-backed)
-        if isinstance(page, str):
-            from starlette.responses import HTMLResponse  # noqa: PLC0415
-
-            return HTMLResponse(page)
-        return page
-
-    async def _callback_fastapi(self, request: StarletteRequest, idp: str):
-        """Async OIDC callback view for the FastAPI path.
+        Backend-agnostic: the backend supplies the (possibly request-injecting)
+        token exchange and coerces every return through the single boundary.
 
         Returns:
             The post-login redirect, or an error response on failure.
@@ -438,15 +387,15 @@ class OIDCAuth(Auth):
         oauth_client = self.get_oauth_client(idp)
         oauth_kwargs = self.get_oauth_kwargs(idp)
         try:
-            token = await oauth_client.authorize_access_token(
-                request,
+            token = await self.backend.oauth_authorize_access_token(
+                oauth_client,
                 **oauth_kwargs.get("authorize_token_kwargs", {}),
             )
         except OAuthError as err:
             return self.backend.coerce_response((str(err), 401))
 
         user = token.get("userinfo")
-        return self.after_logged_in(user, idp, token)
+        return self.backend.coerce_response(self.after_logged_in(user, idp, token))
 
     def after_logged_in(self, user: dict | None, idp: str, token: dict):
         """Run post-login actions after successful OIDC authentication.
@@ -510,18 +459,12 @@ def get_oauth(app: dash.Dash | None = None) -> "OAuth | QuartOAuth":
     if app is None:
         app = dash.get_app()
 
-    state_oauth = getattr(getattr(app.server, "state", None), "dash_auth_oauth", None)
-    if state_oauth is not None:
-        return state_oauth
-
-    extensions = getattr(app.server, "extensions", {})
-    for extension_key in (
-        "authlib.integrations.flask_client",
-        "authlib.integrations.quart_client",
-    ):
-        oauth = extensions.get(extension_key)
-        if oauth is not None:
-            return oauth
+    # Retrieval is symmetric with storage: each backend knows where its own
+    # make_oauth stashed the registry (extensions vs server.state), so there's
+    # no need to probe every framework's location here.
+    oauth = detect_backend(app.server).get_oauth(app.server)
+    if oauth is not None:
+        return oauth
 
     raise RuntimeError(
         "OAuth object is not yet defined. `OIDCAuth(app, **kwargs)` needs "

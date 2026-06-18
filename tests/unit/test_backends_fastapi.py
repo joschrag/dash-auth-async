@@ -88,16 +88,21 @@ def test_coerce_response_tuple_str_and_response():
 
     backend = FastAPIBackend()
 
+    # Tuples carry status/headers and stay plain text (e.g. the 401 challenge).
     resp = backend.coerce_response(
         ("Login Required", 401, {"WWW-Authenticate": 'Basic realm="x"'})
     )
     assert resp.status_code == 401
     assert resp.headers["WWW-Authenticate"] == 'Basic realm="x"'
     assert resp.body == b"Login Required"
+    assert resp.media_type == "text/plain"
 
+    # A bare string is treated as HTML, matching Flask/Quart str returns (e.g.
+    # the OIDC logout page) so the browser renders rather than shows the markup.
     resp2 = backend.coerce_response("hello")
     assert resp2.status_code == 200
     assert resp2.body == b"hello"
+    assert resp2.media_type == "text/html"
 
     passthrough = StarletteResponse(content="x", status_code=204)
     assert backend.coerce_response(passthrough) is passthrough

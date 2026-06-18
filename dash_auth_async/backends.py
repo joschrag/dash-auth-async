@@ -24,6 +24,7 @@ try:
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.requests import Request as StarletteRequest
     from starlette.responses import (
+        HTMLResponse,
         PlainTextResponse,
         RedirectResponse,
         Response as StarletteResponse,
@@ -52,6 +53,11 @@ class Backend(ABC):
 
     request: Any
     session: MutableMapping
+
+    # Whether OIDC views must be async (awaited) on this backend. Lets
+    # OIDCAuth pick the sync vs async view set polymorphically instead of
+    # branching on isinstance(backend, ...).
+    is_async: bool = False
 
     @abstractmethod
     def has_request_context(self) -> bool:
@@ -156,6 +162,44 @@ class Backend(ABC):
 
         return OAuth(server)
 
+    def get_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Retrieve the authlib OAuth registry stored by :meth:`make_oauth`.
+
+        Symmetric with ``make_oauth``: each backend knows where it put its own
+        registry, so the module-level ``get_oauth`` doesn't have to guess.
+
+        Returns:
+            The registry, or None if ``OIDCAuth`` has not run yet.
+        """
+        return getattr(server, "extensions", {}).get(
+            "authlib.integrations.flask_client"
+        )
+
+    def oauth_authorize_redirect(  # noqa: PLR6301
+        self, client, redirect_uri: str, **kwargs
+    ) -> Any:
+        """Start the OAuth authorize-redirect on the authlib ``client``.
+
+        Encapsulates how each backend's authlib client is invoked: the Flask
+        client is synchronous and reads the request from a context global, so
+        the default just calls through. Quart/FastAPI override to await, and
+        FastAPI additionally passes the active request explicitly.
+
+        Returns:
+            The authorize-redirect response (awaitable on async backends).
+        """
+        return client.authorize_redirect(redirect_uri, **kwargs)
+
+    def oauth_authorize_access_token(self, client, **kwargs) -> Any:  # noqa: PLR6301
+        """Exchange the OAuth callback for a token on the authlib ``client``.
+
+        Mirror of :meth:`oauth_authorize_redirect` for the callback leg.
+
+        Returns:
+            The token (awaitable on async backends).
+        """
+        return client.authorize_access_token(**kwargs)
+
     def store_config(self, server, key: str, value: Any) -> None:  # noqa: PLR6301
         """Stash an app-scoped config value (public routes/callbacks).
 
@@ -241,6 +285,8 @@ class FlaskBackend(Backend):
 
 class QuartBackend(Backend):
     """Backend adapter for a Quart (async) server."""
+
+    is_async = True
 
     def __init__(self) -> None:
         """Create the Quart backend, requiring the optional ``quart`` extra.
@@ -329,6 +375,34 @@ class QuartBackend(Backend):
 
         return quart_client.OAuth(server)
 
+    def get_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Retrieve the Quart OAuth registry stored by :meth:`make_oauth`.
+
+        Returns:
+            The registry, or None if ``OIDCAuth`` has not run yet.
+        """
+        return getattr(server, "extensions", {}).get(
+            "authlib.integrations.quart_client"
+        )
+
+    async def oauth_authorize_redirect(  # noqa: PLR6301
+        self, client, redirect_uri: str, **kwargs
+    ) -> Any:
+        """Await the Quart authlib client's authorize-redirect.
+
+        Returns:
+            The authorize-redirect response.
+        """
+        return await client.authorize_redirect(redirect_uri, **kwargs)
+
+    async def oauth_authorize_access_token(self, client, **kwargs) -> Any:  # noqa: PLR6301
+        """Await the Quart authlib client's token exchange.
+
+        Returns:
+            The token.
+        """
+        return await client.authorize_access_token(**kwargs)
+
 
 class FastAPIBackend(Backend):
     """Adapter for Dash's FastAPI backend (Dash 4.2+).
@@ -338,6 +412,8 @@ class FastAPIBackend(Backend):
     from a ContextVar set by its own ASGI auth middleware, and reads the
     session off ``request.session`` (populated by SessionMiddleware).
     """
+
+    is_async = True
 
     def __init__(self) -> None:
         """Create the FastAPI backend, requiring the optional ``fastapi`` extra.
@@ -429,7 +505,16 @@ class FastAPIBackend(Backend):
         return self.request.url.path
 
     def coerce_response(self, result: Any) -> Any:  # noqa: PLR6301
-        """Build a Starlette response from an ``_authorize`` return value.
+        """Build a Starlette response from an ``_authorize``/view return value.
+
+        This is the single coercion boundary for the FastAPI path: every OIDC
+        view and the auth middleware funnel their return value through here, so
+        the framework-response knowledge lives in exactly one place.
+
+        A bare ``str`` becomes an ``HTMLResponse`` (matching Flask/Quart, which
+        render returned strings as ``text/html`` — e.g. the OIDC logout page),
+        while ``(body, status[, headers])`` tuples become a ``PlainTextResponse``
+        carrying the status/headers (e.g. the Basic-auth 401 challenge).
 
         Returns:
             A Starlette response (passthrough if already one).
@@ -442,7 +527,7 @@ class FastAPIBackend(Backend):
             headers = rest[1] if len(rest) > 1 else None
             return PlainTextResponse(body, status_code=status, headers=headers)
         if isinstance(result, str):
-            return PlainTextResponse(result)
+            return HTMLResponse(result)
         return PlainTextResponse(str(result))
 
     @staticmethod
@@ -521,6 +606,39 @@ class FastAPIBackend(Backend):
         # it where get_oauth can find it.
         server.state.dash_auth_oauth = oauth
         return oauth
+
+    def get_oauth(self, server) -> Any:  # noqa: PLR6301
+        """Retrieve the Starlette OAuth registry stashed on ``server.state``.
+
+        Returns:
+            The registry, or None if ``OIDCAuth`` has not run yet.
+        """
+        return getattr(getattr(server, "state", None), "dash_auth_oauth", None)
+
+    async def oauth_authorize_redirect(
+        self, client, redirect_uri: str, **kwargs
+    ) -> Any:
+        """Await the Starlette authlib client's authorize-redirect.
+
+        The Starlette OAuth client takes the request explicitly (no context
+        global), so the active request is resolved from the ContextVar and
+        passed through.
+
+        Returns:
+            The authorize-redirect response.
+        """
+        return await client.authorize_redirect(self.request, redirect_uri, **kwargs)
+
+    async def oauth_authorize_access_token(self, client, **kwargs) -> Any:
+        """Await the Starlette authlib client's token exchange.
+
+        Passes the ContextVar-resolved request, as the Starlette client
+        requires.
+
+        Returns:
+            The token.
+        """
+        return await client.authorize_access_token(self.request, **kwargs)
 
     def register_auth_hook(self, server, needs_body, decide) -> None:
         """Register the before-request auth hook as pure-ASGI middleware.

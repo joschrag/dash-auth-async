@@ -56,6 +56,8 @@ def test_get_oauth_finds_state_registry():
 def test_callback_unknown_idp_returns_400():
     from starlette.requests import Request
 
+    from dash_auth_async.backends import _current_request_var
+
     _, oidc = _make_oidc_app()
     scope = {
         "type": "http",
@@ -67,7 +69,13 @@ def test_callback_unknown_idp_returns_400():
     request = Request(scope)
 
     async def run():
-        response = await oidc._callback_fastapi(request, "nope")
+        # The merged async callback resolves the request from the ContextVar
+        # (set by the auth middleware in a live request) rather than a param.
+        token = _current_request_var.set(request)
+        try:
+            response = await oidc._callback_async("nope")
+        finally:
+            _current_request_var.reset(token)
         assert response.status_code == 400
         assert b"not a valid registered idp" in response.body
 
