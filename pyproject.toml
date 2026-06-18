@@ -102,6 +102,13 @@ preview = true
 select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
 
 [tool.ruff.lint.per-file-ignores]
+# Examples are runnable demos, not shipped library code (setuptools only
+# packages dash_auth_async*). Like tests, they read better without forced
+# docstring coverage on every demo page/callback.
+"examples/**" = [
+    "D",        # demo scripts don't need module/function docstrings
+    "DOC",      # ...nor docstring sections (Returns, etc.)
+]
 # Tests are self-describing and have different idioms than library code:
 "tests/**" = [
     "D",        # don't require docstrings on every test/fixture/module
