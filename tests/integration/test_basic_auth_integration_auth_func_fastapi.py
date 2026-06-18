@@ -28,7 +28,7 @@ def auth_function(username, password):
         },
     ],
 )
-def test_ba002_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+def test_ba004_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
     app = Dash(__name__, backend="fastapi", **kwargs)
     app.layout = html.Div(
         [dcc.Input(id="input", value="initial value"), html.Div(id="output")]
@@ -93,7 +93,7 @@ def both_no_auth_func_or_dict(dash_br, dash_thread_server, **kwargs):
         },
     ],
 )
-def test_ba003_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
+def test_ba005_basic_auth_login_flow(dash_br, dash_thread_server, kwargs):
     with pytest.raises(ValueError):
         both_dict_and_func(dash_br, dash_thread_server, **kwargs)
     with pytest.raises(ValueError):
