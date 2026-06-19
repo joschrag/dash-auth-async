@@ -1,3 +1,4 @@
+import pytest
 from dash import Dash
 
 from dash_auth_async import backends
@@ -7,6 +8,8 @@ from dash_auth_async.backends import (
     get_active_backend,
     set_active_backend,
 )
+
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
 
 
 def test_detect_backend_flask():

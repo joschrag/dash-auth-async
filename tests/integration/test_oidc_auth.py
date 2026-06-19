@@ -14,6 +14,9 @@ _FLASK_OAUTH_MODULE = "authlib.integrations.flask_client.apps.FlaskOAuth2App"
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def valid_authorize_redirect(_, redirect_uri, *args, **kwargs):
     return redirect("/" + redirect_uri.split("/", maxsplit=3)[-1])
 

@@ -21,6 +21,9 @@ TEST_USERS = {"hello": "world", "hello2": "wo:rld"}
 USER_GROUPS = {"hello": ["admin"]}
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _build_app() -> Dash:
     # websocket_callbacks=True makes the *client* open the socket; per-callback
     # websocket=True then routes this callback over it.

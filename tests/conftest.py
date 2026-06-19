@@ -92,8 +92,15 @@ def _stop_with_graceful_async(self: Any) -> Any:
 _runners.ThreadedRunner.stop = _stop_with_graceful_async  # type: ignore
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def reset_active_backend():
-    """Keep the module-level active backend from leaking between tests."""
+    """Keep the module-level active backend from leaking between tests.
+
+    Teardown-only: any test that mutates ``backends._active_backend`` (directly
+    via ``set_active_backend`` or indirectly by constructing an ``Auth``
+    subclass, whose ``__init__`` calls it) must opt in so it resets the global
+    afterwards. Modules that touch the backend do so with a module-level
+    ``pytestmark = pytest.mark.usefixtures("reset_active_backend")``.
+    """
     yield
     backends._active_backend = None

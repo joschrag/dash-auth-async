@@ -43,6 +43,47 @@ except ImportError:
 _current_request_var: ContextVar = ContextVar("dash_auth_request", default=None)
 
 
+def _set_dash_request(request: Any) -> Any:
+    """Populate Dash's FastAPI request ContextVar for the downstream call.
+
+    Dash 4.3.0's ``DashMiddleware`` added a "pass-through to avoid consuming
+    body stream" branch that returns *before* ``set_current_request`` for any
+    non-``_dash-`` page route. Its catch-all then serves those routes via
+    ``index()`` -> ``get_current_request()``, which raises "No active request
+    in context" (a regression that breaks vanilla FastAPI page routes too).
+
+    Our ``_AuthMiddleware`` runs *outside* ``DashMiddleware`` and already holds
+    the request, so we set Dash's ContextVar ourselves and backfill the routes
+    Dash abandoned. For routes Dash still handles, its own set/reset nests
+    cleanly inside ours (ContextVar tokens are LIFO).
+
+    Returns:
+        A reset token to pass to :func:`_reset_dash_request`, or ``None`` if
+        this Dash exposes no such helper (then it's a no-op).
+    """
+    try:
+        from dash.backends._fastapi import (  # noqa: PLC0415, PLC2701 — lazy import of a Dash internal
+            set_current_request,
+        )
+    except ImportError:
+        return None
+    return set_current_request(request)
+
+
+def _reset_dash_request(token: Any) -> None:
+    """Reset the Dash request ContextVar set by :func:`_set_dash_request`.
+
+    No-op when ``token`` is ``None`` (the helper was unavailable).
+    """
+    if token is None:
+        return
+    from dash.backends._fastapi import (  # noqa: PLC0415, PLC2701 — lazy import of a Dash internal
+        reset_current_request,
+    )
+
+    reset_current_request(token)
+
+
 class Backend(ABC):
     """Framework adapter isolating everything Flask/Quart-specific.
 
@@ -815,7 +856,14 @@ class FastAPIBackend(Backend):
                     if logged_in:
                         close_anonymous_ws(client_id)
 
-                    await self.app(scope, downstream_receive, send)
+                    # Backfill Dash's request ContextVar so the catch-all's
+                    # index() works on Dash 4.3.0, which skips it for page
+                    # routes (see _set_dash_request).
+                    dash_token = _set_dash_request(request)
+                    try:
+                        await self.app(scope, downstream_receive, send)
+                    finally:
+                        _reset_dash_request(dash_token)
                 finally:
                     _current_request_var.reset(token)
 

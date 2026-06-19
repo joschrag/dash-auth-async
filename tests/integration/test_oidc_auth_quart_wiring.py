@@ -14,6 +14,9 @@ pytest.importorskip("httpx", reason="httpx is required for the Quart OAuth clien
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _make_oidc_app():
     app = Dash(__name__, backend="quart")
     app.layout = html.Div(

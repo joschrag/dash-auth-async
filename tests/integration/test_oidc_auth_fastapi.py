@@ -14,6 +14,9 @@ _OAUTH_APP = "authlib.integrations.starlette_client.apps.StarletteOAuth2App"
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 async def valid_authorize_redirect(self, request, redirect_uri, *args, **kwargs):
     return RedirectResponse("/" + redirect_uri.split("/", maxsplit=3)[-1])
 

@@ -17,6 +17,9 @@ from dash_auth_async.basic_auth import BasicAuth
 VALID_USERS = {"alice": "secret"}
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _basic_auth_app(**kwargs):
     """A Dash app with BasicAuth on the real Flask backend."""
     app = Dash(__name__)

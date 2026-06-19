@@ -13,6 +13,9 @@ pytest.importorskip("fastapi", reason="FastAPI extra dependencies are not instal
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _make_oidc_app():
     app = Dash(__name__, backend="fastapi")
     app.layout = html.Div(

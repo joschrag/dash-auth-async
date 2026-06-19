@@ -14,12 +14,16 @@ provider with explicit endpoints keeps the whole flow offline.
 
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from dash import Dash, html
 
 from dash_auth_async import OIDCAuth
 
 _AUTHORIZE_URL = "https://idp.example/authorize"
 _TOKEN_URL = "https://idp.example/token"
+
+
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
 
 
 def _make_client():

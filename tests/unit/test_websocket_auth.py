@@ -14,6 +14,8 @@ from dash_auth_async.group_protection import (
 )
 from dash_auth_async.websocket_auth import _WS_AUTH_USER, _ContextCopyingExecutor
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
 _probe: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "probe", default="DEFAULT"
 )
@@ -252,7 +254,7 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
 
     # The hook resolves identity via the active backend; this is the Quart path
     # (ws_identity reads the quart.current_app/quart.session monkeypatched below).
-    # The autouse reset_active_backend fixture clears it after the test.
+    # The reset_active_backend fixture clears it after the test.
     set_active_backend(QuartBackend())
 
     server_a, server_b = _Server(), _Server()

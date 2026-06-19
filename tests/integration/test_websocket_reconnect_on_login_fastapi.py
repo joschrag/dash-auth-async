@@ -28,6 +28,9 @@ websocket = pytest.importorskip(
 )
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _build_app() -> Dash:
     app = Dash(__name__, backend="fastapi", websocket_callbacks=True)
     app.layout = html.Div(
