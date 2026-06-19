@@ -13,6 +13,10 @@ TEST_USERS = {
 
 
 # Test using auth_func instead of TEST_USERS directly
+
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def auth_function(username, password):
     if [username, password] in TEST_USERS["valid"]:
         return True

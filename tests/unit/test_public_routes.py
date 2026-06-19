@@ -10,6 +10,8 @@ from dash_auth_async.public_routes import (
     get_public_routes,
 )
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
 
 def test_public_helpers_resolve_backend_from_app_server_not_global_fallback():
     """The public-route helpers must resolve the backend from ``app.server``,

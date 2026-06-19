@@ -8,6 +8,9 @@ from dash_auth_async import check_groups, list_groups, protected
 pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def test_gp004_list_groups_quart():
     from quart import Quart, session as quart_session
 

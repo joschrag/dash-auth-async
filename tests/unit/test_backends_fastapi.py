@@ -13,6 +13,8 @@ from dash_auth_async.backends import (
     set_active_backend,
 )
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
 
 def _bare_request(path="/", session=None):
     scope = {

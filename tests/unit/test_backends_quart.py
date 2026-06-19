@@ -11,6 +11,9 @@ from dash_auth_async.backends import (
 pytest.importorskip("quart", reason="Quart extra dependencies are not installed")
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def test_detect_backend_quart():
     app = Dash(__name__, backend="quart")
     assert isinstance(detect_backend(app.server), QuartBackend)

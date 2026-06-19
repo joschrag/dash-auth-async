@@ -10,6 +10,9 @@ TEST_USERS = {
 }
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [

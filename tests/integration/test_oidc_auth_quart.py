@@ -18,6 +18,9 @@ _QUART_OAUTH_MODULE = "dash_auth_async.quart_client.QuartOAuth2App"
 _METADATA_URL = "https://idp2.com/oidc/2/.well-known/openid-configuration"
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 async def valid_authorize_redirect(_, redirect_uri, *args, **kwargs):
     return quart.redirect("/" + redirect_uri.split("/", maxsplit=3)[-1])
 

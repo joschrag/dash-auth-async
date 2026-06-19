@@ -27,6 +27,9 @@ TEST_USERS = {"hello": "world", "hello2": "wo:rld"}
 USER_GROUPS = {"hello": ["admin"]}
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _build_app() -> Dash:
     # No backend= kwarg: this is the default Flask backend. With asgiref present,
     # Dash auto-enables use_async and serves async callbacks over HTTP.

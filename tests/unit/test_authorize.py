@@ -7,6 +7,7 @@ with (path, body) as specified in the pluggable-backend design spec.
 
 from types import SimpleNamespace
 
+import pytest
 from dash import Dash
 
 from dash_auth_async.auth import Auth
@@ -15,6 +16,9 @@ from dash_auth_async.public_routes import PUBLIC_CALLBACKS
 
 LOGIN = "login-sentinel"
 CALLBACK_PATH = "/_dash-update-component"
+
+
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
 
 
 class FakeBackend(Backend):

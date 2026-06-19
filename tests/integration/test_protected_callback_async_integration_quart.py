@@ -30,6 +30,9 @@ TEST_USERS = {"hello": "world", "hello2": "wo:rld"}
 USER_GROUPS = {"hello": ["admin"]}
 
 
+pytestmark = pytest.mark.usefixtures("reset_active_backend")
+
+
 def _path_prefix(app: Dash) -> str:
     return (
         app.config.get("url_base_pathname", "")
