@@ -21,17 +21,20 @@ How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-
 | --- | :---: | :---: |
 | Flask backend | ✅ | ✅ |
 | Quart backend | ❌ | ✅ |
-| FastAPI backend | ❌ | 🚧 <sup>1</sup> |
-| Custom backends | ❌ | ✅ <sup>2</sup> |
+| FastAPI backend | ❌ | ✅ |
+| Custom backends | ❌ | ✅ <sup>1</sup> |
 | Protected / public callbacks | ✅ | ✅ |
-| Async callbacks | ❌ | ✅ <sup>3</sup> |
+| Async callbacks | ❌ | ✅ <sup>2</sup> |
 | Authenticated WebSocket callbacks | ❌ | ✅ <sup>3</sup> |
 
-✅ supported · 🚧 on the roadmap · ❌ not supported
+✅ supported · ❌ not supported
 
-<sup>1</sup> A `dash-auth-async[fastapi]` extra is declared and a native FastAPI backend is on the roadmap. In the meantime you can support it by implementing the `Backend` ABC and passing `Auth(..., backend=MyBackend())`.
-<sup>2</sup> `detect_backend` resolves Flask/Quart automatically; any other server is supported by supplying your own `Backend` instance.
-<sup>3</sup> Provided by the Quart backend. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+<sup>1</sup> `detect_backend` resolves Flask/Quart/FastAPI automatically; any other server is supported by supplying your own `Backend` instance.
+
+<sup>2</sup> Provided by the Quart and FastAPI backends.
+
+<sup>3</sup> Provided by the Quart and FastAPI backends. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+
 
 For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
 
@@ -276,7 +279,22 @@ if __name__ == "__main__":
     app.run(debug=True)
 ```
 
-### Quart (async) Backend
+### Async backends
+
+#### Known Limitations
+
+> **⚠️ WebSocket callbacks & auth:**
+> Do **not** enable `websocket_callbacks=True`
+> globally on an authenticated `use_pages` app. The global flag routes *every*
+> callback — including Dash's built-in page-routing callback — over the WebSocket,
+> which bypasses the HTTP `before_request` auth guard where the login challenge is
+> issued. Navigating to a protected page then hangs (the socket closes with `4401`
+> and reconnect-loops) instead of prompting for login — the prompt appears only after
+> a full page reload. Opt **individual** streaming callbacks into `websocket=True`
+> instead, so routing and login stay on HTTP.
+
+
+#### Quart (async) Backend
 
 `dash-auth-async` supports [Dash's Quart backend](https://dash.plotly.com/) for fully async request handling.
 Install the `quart` extra to pull in the required dependencies:
@@ -288,7 +306,7 @@ pip install dash-auth-async[quart]
 Then pass `backend="quart"` when creating your Dash app. The auth setup is identical
 to the Flask examples above — no code changes required beyond the backend flag.
 
-#### BasicAuth with Quart
+##### BasicAuth with Quart
 
 ```python
 from dash import Dash
@@ -302,7 +320,7 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8050, debug=True)
 ```
 
-#### OIDCAuth with Quart
+##### OIDCAuth with Quart
 
 ```python
 import os
@@ -331,6 +349,74 @@ if __name__ == "__main__":
 ```
 
 > **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.10.
+
+#### FastAPI (async) Backend
+
+`dash-auth-async` supports [Dash's FastAPI backend](https://dash.plotly.com/) too.
+Install the `fastapi` extra to pull in the required dependencies:
+
+```
+pip install dash-auth-async[fastapi]
+```
+
+Then pass `backend="fastapi"` when creating your Dash app. `BasicAuth` and
+`OIDCAuth` work exactly as on Flask/Quart — no code changes beyond the backend flag.
+
+##### BasicAuth with FastAPI
+
+```python
+from dash import Dash
+from dash_auth_async import BasicAuth
+
+app = Dash(__name__, backend="fastapi")
+
+BasicAuth(
+    app,
+    {"admin": "admin", "viewer": "viewer123"},
+    secret_key="aStaticSecretKey!",  # enables sessions (SessionMiddleware)
+)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8050, debug=True)
+```
+
+##### OIDCAuth with FastAPI
+
+```python
+import os
+from dash import Dash, html
+from dash_auth_async import OIDCAuth
+
+app = Dash(__name__, backend="fastapi")
+
+app.layout = html.Div([
+    html.H2("OIDCAuth + FastAPI"),
+    html.A("Logout", href="/oidc/logout"),
+])
+
+auth = OIDCAuth(app, secret_key="aStaticSecretKey!")
+auth.register_provider(
+    "myidp",
+    client_id=os.environ["OIDC_CLIENT_ID"],
+    client_secret=os.environ["OIDC_CLIENT_SECRET"],
+    server_metadata_url=os.environ["OIDC_METADATA_URL"],
+    token_endpoint_auth_method="client_secret_post",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8050, debug=True)
+```
+
+Notes:
+
+- A `secret_key` installs Starlette's `SessionMiddleware` automatically. If you
+  add your own `SessionMiddleware`, `dash-auth-async` defers to it.
+- `Auth`/`OIDCAuth` must be constructed before the server starts serving
+  (Starlette forbids adding middleware after startup) — the normal usage pattern.
+- OIDC uses authlib's official `starlette_client`; no extra client module required.
+
+> The FastAPI backend requires Dash >= 4.2.0 and Python >= 3.10.
 
 ### User-group-based permissions
 

@@ -9,6 +9,8 @@ from dash import Dash, callback, get_app
 from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
 from werkzeug.routing import Map, MapAdapter, Rule
 
+from .backends import detect_backend
+
 DASH_PUBLIC_ASSETS_EXTENSIONS = "js,css"
 BASE_PUBLIC_ROUTES = [
     f"/assets/<path:path>.{ext}"
@@ -80,7 +82,7 @@ def add_public_routes(app: Dash, routes: list):
             full_route = url_base.rstrip("/") + full_route
         public_routes.map.add(Rule(full_route))
 
-    app.server.config[PUBLIC_ROUTES] = public_routes
+    detect_backend(app.server).store_config(app.server, PUBLIC_ROUTES, public_routes)
 
 
 def public_callback(*callback_args, **callback_kwargs):
@@ -107,10 +109,12 @@ def public_callback(*callback_args, **callback_kwargs):
         )
         try:
             app = get_app()
-            app.server.config[PUBLIC_CALLBACKS] = [
-                *get_public_callbacks(app),
-                callback_id,
-            ]
+            backend = detect_backend(app.server)
+            backend.store_config(
+                app.server,
+                PUBLIC_CALLBACKS,
+                [*backend.read_config(app.server, PUBLIC_CALLBACKS, []), callback_id],
+            )
         except Exception:
             print(
                 "Could not set up the public callback as the Dash object "
@@ -131,7 +135,9 @@ def get_public_routes(app: Dash) -> MapAdapter:
     Returns:
         The MapAdapter holding the app's registered public routes.
     """
-    return app.server.config.get(PUBLIC_ROUTES, Map([]).bind(""))
+    return detect_backend(app.server).read_config(
+        app.server, PUBLIC_ROUTES, Map([]).bind("")
+    )
 
 
 def get_public_callbacks(app: Dash) -> list:
@@ -140,4 +146,4 @@ def get_public_callbacks(app: Dash) -> list:
     Returns:
         The list of whitelisted public callback ids.
     """
-    return app.server.config.get(PUBLIC_CALLBACKS, [])
+    return detect_backend(app.server).read_config(app.server, PUBLIC_CALLBACKS, [])

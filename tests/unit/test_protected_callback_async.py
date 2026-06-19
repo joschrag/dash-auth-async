@@ -80,6 +80,32 @@ def test_gp008_async_protected_emits_missing_permissions_output():
         assert asyncio.run(wrapped()) == "forbidden"
 
 
+def test_gp008b_async_protected_emits_unauthenticated_output_without_session_user():
+    """An async target with no session user gets the unauthenticated output.
+
+    The third gate branch (alongside authorized and missing-permissions): when
+    ``_current_user`` resolves to ``None`` the wrapper must short-circuit to
+    ``unauthenticated_output`` and never await the inner coroutine -- while still
+    staying a coroutine function so Dash keeps it on the async dispatch path.
+    """
+
+    async def func():
+        return "success"
+
+    app = Flask(__name__)
+    app.secret_key = "Test!"
+    with app.test_request_context("/", method="GET"):
+        # No session["user"] -> unauthenticated.
+        wrapped = protected(
+            unauthenticated_output="unauthenticated",
+            missing_permissions_output="forbidden",
+            groups=["admin"],
+        )(func)
+
+        assert inspect.iscoroutinefunction(wrapped)
+        assert asyncio.run(wrapped()) == "unauthenticated"
+
+
 # --------------------------------------------------------------------------- #
 # Level 3: protected_callback registers on the correct Dash dispatch path
 # --------------------------------------------------------------------------- #

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-19
+
+### Added
+- FastAPI (async) backend support for `BasicAuth` and `OIDCAuth` — run on Starlette/ASGI with `Dash(__name__, backend="fastapi")`. Auth is enforced by pure-ASGI middleware, sessions use Starlette `SessionMiddleware`, and public routes/callbacks are stored on the app's `server.state`
+- Authenticated WebSocket callbacks on the FastAPI backend: each `callback_request` is authorized via `Backend.ws_identity` and fails closed, while public callbacks still stream unauthenticated
+- WebSocket authentication now reconnects on login. When a browser authenticates over HTTP, its stale pre-login WebSocket is retired so the renderer reconnects with the authenticated session — eliminating the "first click is dropped / only works on the second click" behaviour for callbacks invoked over a socket opened before login. Applies to both the FastAPI and Quart backends
+
+### Changed
+- The WebSocket `callback_map` is migrated lazily on the first `callback_request` rather than at `Auth(...)` construction, so a global `@callback` registered after `Auth(...)` is still picked up and a WebSocket-first client no longer hits an empty map
+
+### Fixed
+- The public-route helpers resolve the backend from `app.server` instead of a process-global fallback, keeping routing correct when several apps share a process
+- `secure_session` is honoured through `setup_session`, and the FastAPI session lookup is hardened so it raises a clear error (rather than `KeyError`) under `python -O`
+- FastAPI OIDC views annotate their request parameter so Starlette injects the request, and the ASGI body-replay emits `http.disconnect` once the cached body is consumed
+
 ## [1.2.1] - 2026-06-17
 
 ### Fixed

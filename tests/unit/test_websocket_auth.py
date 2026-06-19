@@ -1,5 +1,6 @@
 """Unit tests for the WebSocket auth primitives."""
 
+import asyncio
 import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
@@ -130,15 +131,111 @@ class _Server:
     """Weak-referenceable stand-in for an app.server (the registry key)."""
 
 
+class _DashAppStub:
+    """Minimal Dash-app double exposing the idempotent ``_setup_server`` the hook
+    calls to migrate ``callback_map`` lazily on the first WS ``callback_request``.
+    """
+
+    def __init__(self) -> None:
+        self.setup_calls = 0
+
+    def _setup_server(self) -> None:
+        self.setup_calls += 1
+
+
 class _RecordingAuth:
     """Auth double that records the calls the hook routes to it."""
 
     def __init__(self) -> None:
         self.calls: list = []
+        self.app = _DashAppStub()
 
     def authorize_ws(self, payload, user) -> bool:
         self.calls.append((payload, user))
         return True
+
+
+# --------------------------------------------------------------------------- #
+# Connection registry: the websocket_connect hook tracks sockets so a later
+# login can retire the browser's stale anonymous one. It must not accumulate --
+# authenticated sockets are never retired (so never tracked), and a browser's
+# reconnects (one SharedWorker socket per browser) must not pile up.
+# --------------------------------------------------------------------------- #
+class _IdentityBackend:
+    """Backend double whose ``ws_identity`` returns a fixed (server, user)."""
+
+    def __init__(self, user) -> None:
+        self._user = user
+
+    def ws_identity(self, _ws):
+        return object(), self._user
+
+
+class _FakeWS:
+    """Minimal socket double exposing the cookies and an awaitable close."""
+
+    def __init__(self, client_id) -> None:
+        self.cookies = {"dac_client": client_id} if client_id else {}
+        self.close_code = None
+
+    async def close(self, code=None) -> None:
+        self.close_code = code
+
+
+def _tracked_count(client_id) -> int:
+    """Sockets tracked for ``client_id``, agnostic to the registry's shape."""
+    from dash_auth_async.websocket_auth import _WS_BY_CLIENT
+
+    entry = _WS_BY_CLIENT.get(client_id)
+    if entry is None:
+        return 0
+    return len(entry) if isinstance(entry, (set, list, dict)) else 1
+
+
+def _run_connect_hook(ws) -> None:
+    from dash_auth_async.websocket_auth import _ws_connect_hook
+
+    async def _run():
+        _ws_connect_hook(ws)
+
+    asyncio.run(_run())
+
+
+def _use_backend(monkeypatch, user) -> None:
+    """Point the connect hook at a backend double whose identity returns ``user``."""
+    monkeypatch.setattr(
+        "dash_auth_async.websocket_auth.get_active_backend",
+        lambda: _IdentityBackend(user),
+    )
+
+
+def test_authenticated_handshake_is_not_tracked(monkeypatch):
+    """A socket that handshakes already authenticated is never retired, so the
+    registry must not hold it (else authenticated sockets leak unboundedly).
+    """
+    from dash_auth_async.websocket_auth import _WS_BY_CLIENT
+
+    _WS_BY_CLIENT.clear()
+    _use_backend(monkeypatch, {"email": "a@b.c", "groups": []})
+
+    _run_connect_hook(_FakeWS("client-1"))
+
+    assert _tracked_count("client-1") == 0
+
+
+def test_reconnect_does_not_accumulate_entries(monkeypatch):
+    """A browser has one SharedWorker socket; a reconnect replaces the prior
+    anonymous entry rather than stacking, so tracking stays at one per browser.
+    """
+    from dash_auth_async.websocket_auth import _WS_BY_CLIENT
+
+    _WS_BY_CLIENT.clear()
+    _use_backend(monkeypatch, None)  # anonymous handshakes
+
+    _run_connect_hook(_FakeWS("client-2"))
+    _run_connect_hook(_FakeWS("client-2"))
+
+    assert _tracked_count("client-2") == 1
 
 
 def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
@@ -146,11 +243,17 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
     Auth registered for ``quart.current_app`` -- not some other app's Auth.
     """
     quart = pytest.importorskip("quart")
+    from dash_auth_async.backends import QuartBackend, set_active_backend
     from dash_auth_async.websocket_auth import (
         _AUTH_BY_SERVER,
         _WS_AUTH_USER,
         _ws_message_hook,
     )
+
+    # The hook resolves identity via the active backend; this is the Quart path
+    # (ws_identity reads the quart.current_app/quart.session monkeypatched below).
+    # The autouse reset_active_backend fixture clears it after the test.
+    set_active_backend(QuartBackend())
 
     server_a, server_b = _Server(), _Server()
     auth_a, auth_b = _RecordingAuth(), _RecordingAuth()
@@ -174,6 +277,10 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
         # Only app B's Auth was consulted, with app B's session user.
         assert auth_b.calls == [({"output": "x.children"}, user)]
         assert auth_a.calls == []
+        # The hook migrated only app B's callback_map (lazy, idempotent), and
+        # never touched app A's.
+        assert auth_b.app.setup_calls == 1
+        assert auth_a.app.setup_calls == 0
         # The resolved user was stashed for the worker.
         assert _WS_AUTH_USER.get() == user
     finally:

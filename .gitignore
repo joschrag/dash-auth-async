@@ -6,6 +6,12 @@ vv
 .tox/
 venv/
 
+# Local scratch / repro scripts — not part of the package, kept out of the
+# tracked tree so `ruff check .` (which respects .gitignore) stays green.
+scripts/
+.coverage
+.vscode/
+
 node_modules
 npm-debug.log
 .DS_Store

@@ -63,8 +63,6 @@ class BasicAuth(Auth):
         else:
             self._user_groups_dict = None
             self._user_groups_func = user_groups  # Callable or None after dict excluded
-        if secret_key is not None:
-            app.server.secret_key = secret_key
 
         if self._auth_func is not None:
             if username_password_list is not None:
@@ -85,6 +83,12 @@ class BasicAuth(Auth):
                 else {k: v for k, v in username_password_list}
             )
         super().__init__(app, public_routes=public_routes)
+
+        # After super().__init__: self.backend now exists, and the auth
+        # middleware is registered, so SessionMiddleware (added here) lands
+        # outermost on FastAPI — making request.session available to both
+        # the auth layer and the Dash callback.
+        self.backend.setup_session(app.server, secret_key)
 
     def is_authorized(self):
         """Return whether the request carries valid Basic credentials.
