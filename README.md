@@ -21,18 +21,20 @@ How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-
 | --- | :---: | :---: |
 | Flask backend | ✅ | ✅ |
 | Quart backend | ❌ | ✅ |
-| FastAPI backend | ❌ | ✅ <sup>1</sup> |
-| Custom backends | ❌ | ✅ <sup>2</sup> |
+| FastAPI backend | ❌ | ✅ |
+| Custom backends | ❌ | ✅ <sup>1</sup> |
 | Protected / public callbacks | ✅ | ✅ |
-| Async callbacks | ❌ | ✅ <sup>3</sup> |
-| Authenticated WebSocket callbacks | ❌ | ✅ <sup>4</sup> |
+| Async callbacks | ❌ | ✅ <sup>2</sup> |
+| Authenticated WebSocket callbacks | ❌ | ✅ <sup>3</sup> |
 
 ✅ supported · ❌ not supported
 
-<sup>1</sup> Install the `dash-auth-async[fastapi]` extra and create the app with `backend="fastapi"`. `BasicAuth` and `OIDCAuth` work with full parity; OIDC uses authlib's official `starlette_client`.
-<sup>2</sup> `detect_backend` resolves Flask/Quart/FastAPI automatically; any other server is supported by supplying your own `Backend` instance.
-<sup>3</sup> Provided by the Quart and FastAPI backends.
-<sup>4</sup> Provided by the Quart backend. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+<sup>1</sup> `detect_backend` resolves Flask/Quart/FastAPI automatically; any other server is supported by supplying your own `Backend` instance.
+
+<sup>2</sup> Provided by the Quart and FastAPI backends.
+
+<sup>3</sup> Provided by the Quart and FastAPI backends. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+
 
 For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
 
