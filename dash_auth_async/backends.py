@@ -346,8 +346,16 @@ class QuartBackend(Backend):
         """Register the before-request auth hook on a Quart server.
 
         Awaits both the request body and the (possibly coroutine) decision so
-        async auth logic is preserved.
+        async auth logic is preserved. Also mints the browser-stable
+        ``dac_client`` cookie on first contact and, when a browser authenticates,
+        retires its stale pre-login WebSocket so the renderer reconnects
+        authenticated (see websocket_auth) -- the Quart half of Design A.
         """
+        from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
+            WS_CLIENT_COOKIE,
+            close_anonymous_ws,
+            mint_ws_client_id,
+        )
 
         @server.before_request
         async def before_request_auth():
@@ -358,8 +366,30 @@ class QuartBackend(Backend):
             )
             result = decide(quart.request.path, body)
             if inspect.isawaitable(result):
-                return await result
-            return result
+                result = await result
+            if result is not None:
+                return result
+
+            # Authorized. If this browser is now logged in, retire any stale
+            # anonymous socket it opened before login so the renderer reconnects
+            # authenticated before the first click.
+            if quart.session.get("user") is not None:
+                close_anonymous_ws(quart.request.cookies.get(WS_CLIENT_COOKIE))
+            return None
+
+        @server.after_request
+        def set_client_cookie(response):
+            # Minted on every response that lacks it -- including the BasicAuth
+            # 401 challenge -- so it predates a later pre-login WS handshake.
+            if quart.request.cookies.get(WS_CLIENT_COOKIE) is None:
+                response.set_cookie(
+                    WS_CLIENT_COOKIE,
+                    mint_ws_client_id(),
+                    httponly=True,
+                    samesite="Lax",
+                    path="/",
+                )
+            return response
 
     def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
         """Build a URL for a Quart endpoint.
@@ -706,6 +736,33 @@ class FastAPIBackend(Backend):
 
                 request = StarletteRequest(scope, receive)
                 token = _current_request_var.set(request)
+
+                # Browser-stable client id, minted on first contact so it is
+                # already present at a later pre-login WS handshake. This ties an
+                # anonymous socket back to the browser that authenticates here,
+                # letting login retire the stale socket (see websocket_auth).
+                from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
+                    WS_CLIENT_COOKIE,
+                    close_anonymous_ws,
+                    mint_ws_client_id,
+                )
+
+                client_id = request.cookies.get(WS_CLIENT_COOKIE)
+                set_client_cookie = client_id is None
+                if set_client_cookie:
+                    client_id = mint_ws_client_id()
+
+                async def send(message, _send=send):
+                    if set_client_cookie and message["type"] == "http.response.start":
+                        message.setdefault("headers", []).append(
+                            (
+                                b"set-cookie",
+                                f"{WS_CLIENT_COOKIE}={client_id}; Path=/; "
+                                f"HttpOnly; SameSite=Lax".encode("latin-1"),
+                            )
+                        )
+                    await _send(message)
+
                 try:
                     body = None
                     downstream_receive = receive
@@ -747,6 +804,16 @@ class FastAPIBackend(Backend):
                         response = backend.coerce_response(result)
                         await response(scope, receive, send)
                         return
+
+                    # Authorized. If this browser is now logged in, retire any
+                    # stale anonymous sockets it opened before login so the
+                    # renderer reconnects authenticated before the first click.
+                    try:
+                        logged_in = backend.session.get("user") is not None
+                    except RuntimeError:
+                        logged_in = False  # no SessionMiddleware -> nothing to retire
+                    if logged_in:
+                        close_anonymous_ws(client_id)
 
                     await self.app(scope, downstream_receive, send)
                 finally:
