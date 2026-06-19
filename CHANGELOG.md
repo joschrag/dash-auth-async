@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-19
+
+### Fixed
+- FastAPI page routes no longer return a `500` ("No active request in context") under Dash 4.3.0. Dash 4.3.0's middleware skips setting its request context for non-`_dash-` page routes; the FastAPI backend now backfills that context itself so page routes (and the catch-all `index()`) render correctly
+
 ## [1.3.0] - 2026-06-19
 
 ### Added
