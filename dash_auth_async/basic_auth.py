@@ -119,9 +119,13 @@ class BasicAuth(Auth):
                 return False
         else:
             stored_password = self._users.get(username)
-            if stored_password is None:
-                return authorized
-            authorized = hmac.compare_digest(stored_password, password)
+            # Run a constant-time comparison even when the username is unknown
+            # (compare `password` against itself, then discard the result) so
+            # response timing doesn't reveal which usernames exist.
+            reference = stored_password if stored_password is not None else password
+            authorized = hmac.compare_digest(reference, password) and (
+                stored_password is not None
+            )
         if authorized:
             try:
                 self.session["user"] = {"email": username, "groups": []}

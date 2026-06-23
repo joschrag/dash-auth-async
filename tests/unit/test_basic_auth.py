@@ -78,6 +78,16 @@ def test_wrong_password_is_unauthorized():
         assert auth.is_authorized() is False
 
 
+def test_unknown_username_is_unauthorized():
+    """An unknown username fails auth (and is compared in constant time)."""
+    import base64
+
+    app, auth = _basic_auth_app()
+    token = base64.b64encode(b"nobody:whatever").decode()
+    with app.server.test_request_context(headers={"Authorization": f"Basic {token}"}):
+        assert auth.is_authorized() is False
+
+
 def test_missing_header_is_unauthorized():
     app, auth = _basic_auth_app()
     with app.server.test_request_context():
