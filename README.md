@@ -432,7 +432,7 @@ The following utilities are defined:
 * `protected_callback`: A callback that only runs if the user is authenticated
   and with the right group permissions.
 
-NOTE: user info is stored in the session so make sure you define a secret_key on the Flask server
+NOTE: user info is stored in the session so make sure you define a secret_key on the server
 to use this feature.
 
 If you wish to use this feature with BasicAuth, you will need to define the groups for individual
@@ -449,7 +449,7 @@ USER_PWD = {
 BasicAuth(
     app,
     USER_PWD,
-    user_groups={"user1": ["group1", "group2"], "user2": ["group2"]},
+    user_groups={"username": ["group1", "group2"], "user2": ["group2"]},
     secret_key="Test!",
 )
 
