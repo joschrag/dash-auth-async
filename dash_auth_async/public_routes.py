@@ -1,6 +1,5 @@
 """Public route and callback registration for unauthenticated access."""
 
-import inspect
 import os
 
 from dash import Dash, callback, get_app
@@ -98,15 +97,15 @@ def public_callback(*callback_args, **callback_kwargs):
     """
 
     def decorator(func):
+        ids_before = set(GLOBAL_CALLBACK_MAP)
         wrapped_func = callback(*callback_args, **callback_kwargs)(func)
-        callback_id = next(
-            (
-                k
-                for k, v in GLOBAL_CALLBACK_MAP.items()
-                if inspect.getsource(v["callback"]) == inspect.getsource(func)
-            ),
-            None,
-        )
+        # The id of the callback just registered is the new key Dash added to
+        # its global map. Identifying it this way -- rather than comparing
+        # source text -- avoids mis-whitelisting two callbacks that share a
+        # body, and never raises on callbacks whose source can't be read
+        # (lambdas reused, REPL/dynamically defined functions).
+        new_ids = [k for k in GLOBAL_CALLBACK_MAP if k not in ids_before]
+        callback_id = new_ids[0] if new_ids else None
         try:
             app = get_app()
             backend = detect_backend(app.server)
