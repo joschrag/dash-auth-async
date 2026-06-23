@@ -113,7 +113,7 @@ class Auth(ABC):
             pathname = next(
                 (
                     inp.get("value")
-                    for inp in body["inputs"]
+                    for inp in body.get("inputs", [])
                     if isinstance(inp, dict) and inp.get("property") == "pathname"
                 ),
                 None,
