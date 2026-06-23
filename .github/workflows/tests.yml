@@ -16,11 +16,11 @@ jobs:
         dash-constraint: ["dash[testing]>=3,<4", "dash[testing]>=4,<4.2.0", "dash[testing]>=4.2.0"]
         include:
           - dash-constraint: "dash[testing]>=3,<4"
-            extra-flags: ".[oidc]"
+            extra-flags: ".[oidc,async]"
           - dash-constraint: "dash[testing]>=4,<4.2.0"
-            extra-flags: ".[oidc]" # No async extras yet!
+            extra-flags: ".[oidc,async]" # No async extras yet!
           - dash-constraint: "dash[testing]>=4.2.0"
-            extra-flags: ".[oidc,fastapi,quart]"
+            extra-flags: ".[oidc,fastapi,quart,async]"
 
     steps:
       - uses: actions/checkout@v4
