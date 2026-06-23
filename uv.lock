@@ -647,7 +647,7 @@ dev = [
 requires-dist = [
     { name = "authlib", specifier = ">=1.7.2" },
     { name = "dash", specifier = ">=2" },
-    { name = "dash", extras = ["async"], marker = "extra == 'async'", specifier = ">=4.2.0" },
+    { name = "dash", extras = ["async"], marker = "extra == 'async'", specifier = ">=3.1.0" },
     { name = "dash", extras = ["fastapi"], marker = "extra == 'fastapi'", specifier = ">=4.2.0" },
     { name = "dash", extras = ["quart"], marker = "extra == 'quart'", specifier = ">=4.2.0" },
     { name = "flask", specifier = ">=3.1.3" },
