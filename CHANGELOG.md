@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-06-24
+
+### Security
+- `OIDCAuth` no longer rewrites the callback host from the client-supplied `X-Forwarded-Host` header when building the IDP `redirect_uri`. An attacker could set that header to point the `redirect_uri` at a host they control, leaking the authorization code (or acting as an open-redirect / phishing primitive). The `redirect_uri` is now derived only from the host and scheme of the incoming request.
+
+### Changed
+- **Behavior change for proxied OIDC deployments.** Because `X-Forwarded-Host` is no longer trusted, apps behind a reverse proxy that rewrites the host must restore the public host at the transport layer (e.g. werkzeug `ProxyFix` on Flask, hypercorn `ProxyFixMiddleware` on Quart, or a proxy that overwrites the `Host` header on uvicorn). `force_https_callback` continues to cover the scheme. See the "Running behind a reverse proxy" section of the README.
+
 ## [1.3.2] - 2026-06-24
 
 ### Fixed
