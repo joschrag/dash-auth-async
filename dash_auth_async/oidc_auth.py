@@ -249,21 +249,21 @@ class OIDCAuth(Auth):
     def _create_redirect_uri(self, idp: str):
         """Create the redirect uri based on callback endpoint and idp.
 
+        Host and scheme come from the request scope only. Behind a proxy,
+        configure the WSGI/ASGI server to populate them from forwarded headers
+        (werkzeug ``ProxyFix`` / hypercorn ``--forwarded-allow-ips``) — the
+        library must never trust a client-supplied ``X-Forwarded-Host`` to
+        build the IdP ``redirect_uri`` (auth-code leak / open redirect).
+        ``force_https_callback`` covers the scheme half of dash-auth#154.
+
         Returns:
             The fully-qualified OIDC callback redirect URI.
         """
         if self.force_https_callback:
-            redirect_uri = self.backend.url_for(
+            return self.backend.url_for(
                 "oidc_callback", idp=idp, _external=True, _scheme="https"
             )
-        else:
-            redirect_uri = self.backend.url_for(
-                "oidc_callback", idp=idp, _external=True
-            )
-        host = self.request.headers.get("X-Forwarded-Host")
-        if host:
-            redirect_uri = redirect_uri.replace(self.backend.current_host(), host, 1)
-        return redirect_uri
+        return self.backend.url_for("oidc_callback", idp=idp, _external=True)
 
     def login_request(self, idp: str | None = None):
         """Start the login process.
