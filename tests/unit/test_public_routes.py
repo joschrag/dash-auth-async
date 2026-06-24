@@ -62,6 +62,27 @@ def test_public_callback_does_not_crash_on_lambda():
     assert "c.children" in get_public_callbacks(app)
 
 
+def test_public_callback_whitelists_reregistered_output_id():
+    """Re-registering the same output id (a second app in the same process)
+    must still whitelist the real id, not ``None``.
+
+    Regression for the map-diff resolution: Dash's ``GLOBAL_CALLBACK_MAP`` is a
+    process global, so the second registration of ``d.children`` added no *new*
+    key -- the diff came back empty and the callback was whitelisted as
+    ``None``. Deriving the id from the outputs is immune to map state.
+    """
+    app1 = Dash("reregister_app1")
+    add_public_routes(app1, [])
+    public_callback(Output("d", "children"), Input("w", "value"))(lambda value: value)
+    assert "d.children" in get_public_callbacks(app1)
+
+    app2 = Dash("reregister_app2")
+    add_public_routes(app2, [])
+    public_callback(Output("d", "children"), Input("w", "value"))(lambda value: value)
+    assert "d.children" in get_public_callbacks(app2)
+    assert None not in get_public_callbacks(app2)
+
+
 def test_public_helpers_resolve_backend_from_app_server_not_global_fallback():
     """The public-route helpers must resolve the backend from ``app.server``,
     not the process-global ``get_active_backend()`` (which falls back to

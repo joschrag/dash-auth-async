@@ -4,8 +4,10 @@ import os
 
 from dash import Dash, callback, get_app
 
-# GLOBAL_CALLBACK_MAP is a Dash internal with no public API equivalent.
-from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
+# create_callback_id is the same helper Dash uses internally to key its
+# callback map; no public API equivalent exists.
+from dash._utils import create_callback_id  # noqa: PLC2701
+from dash.dependencies import handle_callback_args
 from werkzeug.routing import Map, MapAdapter, Rule
 
 from .backends import detect_backend
@@ -97,15 +99,18 @@ def public_callback(*callback_args, **callback_kwargs):
     """
 
     def decorator(func):
-        ids_before = set(GLOBAL_CALLBACK_MAP)
         wrapped_func = callback(*callback_args, **callback_kwargs)(func)
-        # The id of the callback just registered is the new key Dash added to
-        # its global map. Identifying it this way -- rather than comparing
-        # source text -- avoids mis-whitelisting two callbacks that share a
-        # body, and never raises on callbacks whose source can't be read
-        # (lambdas reused, REPL/dynamically defined functions).
-        new_ids = [k for k in GLOBAL_CALLBACK_MAP if k not in ids_before]
-        callback_id = new_ids[0] if new_ids else None
+        # Derive the callback id straight from the output specs, exactly as
+        # Dash does internally (create_callback_id). This is deterministic and
+        # independent of GLOBAL_CALLBACK_MAP state -- unlike diffing the map,
+        # which yields no new key when the same output id was already
+        # registered (re-runs, or several apps sharing one process), and unlike
+        # source-text comparison, which mis-whitelists callbacks sharing a body
+        # and raises on lambdas/REPL-defined functions.
+        output, inputs, _state, _prevent = handle_callback_args(
+            callback_args, callback_kwargs
+        )
+        callback_id = create_callback_id(output, inputs, no_output=not output)
         try:
             app = get_app()
             backend = detect_backend(app.server)
