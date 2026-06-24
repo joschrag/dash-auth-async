@@ -4,12 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [1.3.2] - 2026-06-23
+## [1.3.2] - 2026-06-24
 
 ### Fixed
 - `BasicAuth` credential checks now run in constant time even for unknown usernames, closing a timing side channel that allowed username enumeration
 - Callback requests whose body is missing the `inputs` key now fail closed (treated as unauthorised) instead of raising a server error
-- `public_callback` resolves its callback id from the registered callback map rather than the function source text, so public callbacks are identified reliably
+- `public_callback` derives its callback id from the output spec (`create_callback_id`) rather than the function source text or a diff of Dash's process-global `GLOBAL_CALLBACK_MAP`. Re-registering the same output id (a second app in the same process, or repeated registration) added no new map key, so the diff came back empty and the callback was whitelisted as `None` — leaving the route unauthenticated over WebSocket
 
 ## [1.3.1] - 2026-06-19
 
