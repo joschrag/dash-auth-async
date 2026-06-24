@@ -118,6 +118,15 @@ def test_private_callback_unauthorized_returns_login_request():
     assert authorize(auth, CALLBACK_PATH, body) == LOGIN
 
 
+def test_callback_body_without_inputs_key_does_not_crash():
+    """A truthy body lacking the 'inputs' key must fail closed, not 500.
+
+    Regression for indexing body["inputs"] (the WS path already used .get()).
+    """
+    auth = StubAuth(Dash(__name__), authorized=False)
+    assert authorize(auth, CALLBACK_PATH, {"output": "x"}) == LOGIN
+
+
 def test_callback_path_respects_url_base_prefix():
     auth = StubAuth(
         Dash(__name__, url_base_pathname="/app/"),

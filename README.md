@@ -15,7 +15,7 @@ License: MIT
 
 ## Feature overview
 
-How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-auth). The headline difference is async: upstream is Flask-only, while `dash-auth-async` adds the Quart backend and everything that rides on it (async callbacks, authenticated WebSocket callbacks) plus a pluggable backend abstraction.
+How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-auth). The headline difference is async: upstream is Flask-only, while `dash-auth-async` adds async callback support, the Quart and FastAPI backends, authenticated WebSocket callbacks, and a pluggable backend abstraction. 
 
 | Capability | `dash-auth` (upstream) | `dash-auth-async` |
 | --- | :---: | :---: |
@@ -31,9 +31,9 @@ How this fork compares to upstream [`dash-auth`](https://github.com/plotly/dash-
 
 <sup>1</sup> `detect_backend` resolves Flask/Quart/FastAPI automatically; any other server is supported by supplying your own `Backend` instance.
 
-<sup>2</sup> Provided by the Quart and FastAPI backends.
+<sup>2</sup> Supported on **every** backend, Flask included — you don't need Quart or FastAPI, just the `async` extra (bundled as `dash-auth-async[async]`, which pulls in `dash[async]`).
 
-<sup>3</sup> Provided by the Quart and FastAPI backends. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
+<sup>3</sup> Provided by the Quart and FastAPI backends only. WebSocket auth is a no-op on Flask, which has no WebSocket callback transport.
 
 
 For local testing, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run individual tests:
@@ -432,7 +432,7 @@ The following utilities are defined:
 * `protected_callback`: A callback that only runs if the user is authenticated
   and with the right group permissions.
 
-NOTE: user info is stored in the session so make sure you define a secret_key on the Flask server
+NOTE: user info is stored in the session so make sure you define a secret_key on the server
 to use this feature.
 
 If you wish to use this feature with BasicAuth, you will need to define the groups for individual
@@ -449,7 +449,7 @@ USER_PWD = {
 BasicAuth(
     app,
     USER_PWD,
-    user_groups={"user1": ["group1", "group2"], "user2": ["group2"]},
+    user_groups={"username": ["group1", "group2"], "user2": ["group2"]},
     secret_key="Test!",
 )
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dash-auth-async"
-version = "1.3.1"
+version = "1.3.2"
 description = "Dash Authorization Package."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,7 +45,7 @@ dependencies = [
 [project.optional-dependencies]
 fastapi = ["dash[fastapi]>=4.2.0"]
 quart = ["dash[quart]>=4.2.0","httpx>=0.23.0"]
-async = ["dash[async]>=4.2.0"]
+async = ["dash[async]>=3.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/joschrag/dash-auth-async"
@@ -102,13 +102,6 @@ preview = true
 select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# Examples are runnable demos, not shipped library code (setuptools only
-# packages dash_auth_async*). Like tests, they read better without forced
-# docstring coverage on every demo page/callback.
-"examples/**" = [
-    "D",        # demo scripts don't need module/function docstrings
-    "DOC",      # ...nor docstring sections (Returns, etc.)
-]
 # Tests are self-describing and have different idioms than library code:
 "tests/**" = [
     "D",        # don't require docstrings on every test/fixture/module
