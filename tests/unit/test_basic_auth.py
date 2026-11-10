@@ -142,3 +142,29 @@ def test_invalid_config_rejected_before_wiring_hooks(monkeypatch):
     with pytest.raises(ValueError):
         BasicAuth(Dash(__name__), VALID_USERS, auth_func=lambda u, p: True)
     assert backend.hook_registered is False
+
+
+# --- Non-ASCII credentials: hmac.compare_digest rejects non-ASCII str ---
+
+
+@pytest.mark.parametrize(
+    "users, credentials, expected",
+    [
+        pytest.param({"jörg": "pässwörd"}, "jörg:pässwörd", True, id="valid"),
+        pytest.param({"jörg": "pässwörd"}, "jörg:pässword", False, id="wrong"),
+        pytest.param(VALID_USERS, "alice:sécret", False, id="ascii-stored"),
+        pytest.param(VALID_USERS, "nobody:pässwörd", False, id="unknown-user"),
+    ],
+)
+def test_non_ascii_credentials_are_compared_not_crashed(users, credentials, expected):
+    """Regression: comparing ``str`` with ``hmac.compare_digest`` raised
+    ``TypeError`` for any non-ASCII password, so anyone could trigger a 500 and
+    a user whose password has e.g. an umlaut could never log in.
+    """
+    import base64
+
+    app = Dash(__name__)
+    auth = BasicAuth(app, users, secret_key="test-secret")
+    token = base64.b64encode(credentials.encode("utf-8")).decode()
+    with app.server.test_request_context(headers={"Authorization": f"Basic {token}"}):
+        assert auth.is_authorized() is expected
