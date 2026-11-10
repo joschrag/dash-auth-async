@@ -75,12 +75,60 @@ class _WSEntry:
 # reconnect replaces the prior entry rather than stacking. Together these bound
 # the map to (at most) one entry per distinct pre-login browser.
 _WS_BY_CLIENT: dict[str, _WSEntry] = {}
+# client-id cookie -> the browser's current *authenticated* socket, retired on
+# logout. Kept apart from the anonymous map because every authorized HTTP
+# request retires the anonymous entry, which must never hit a logged-in socket.
+_AUTHED_WS_BY_CLIENT: dict[str, _WSEntry] = {}
 _ws_registry_lock = threading.Lock()
+
+# The key is a *client-supplied* cookie and Dash has no disconnect hook to
+# deregister on, so an unauthenticated client handshaking with a fresh id each
+# time would otherwise grow the map (and pin every socket) without bound.
+# shortcut: oldest-first eviction, an evicted browser only loses the proactive
+# reconnect and falls back to the reactive 4401-then-reconnect path; upgrade to
+# deregistering on disconnect if Dash ever exposes a websocket_disconnect hook.
+_MAX_TRACKED_WS = 10_000
+# Minted ids are 22 characters; anything much longer was not minted here.
+_MAX_CLIENT_ID_LEN = 64
 
 
 def mint_ws_client_id() -> str:
     """Return a fresh, opaque browser-stable client id for the cookie."""
     return secrets.token_urlsafe(16)
+
+
+def _register_ws(
+    registry: dict[str, _WSEntry], client_id: str | None, ws: Any, loop: Any
+) -> None:
+    """Track ``ws`` under ``client_id`` in ``registry``, replacing any prior.
+
+    No-op without a (plausible) client id. The registry is capped at
+    ``_MAX_TRACKED_WS`` entries, evicting the oldest first.
+    """
+    if not client_id or len(client_id) > _MAX_CLIENT_ID_LEN:
+        return
+    with _ws_registry_lock:
+        # Pop first so a reconnect re-enters as the newest entry.
+        registry.pop(client_id, None)
+        while len(registry) >= _MAX_TRACKED_WS:
+            del registry[next(iter(registry))]
+        registry[client_id] = _WSEntry(ws, loop)
+
+
+def _close_ws(registry: dict[str, _WSEntry], client_id: str | None) -> None:
+    """Close and deregister the socket tracked for ``client_id``, if any.
+
+    The close code (``4408``) is outside the renderer's no-reconnect set
+    (``1000``/``4001``), so the SharedWorker dials a fresh handshake that
+    carries the browser's current session cookie.
+    """
+    if not client_id:
+        return
+    with _ws_registry_lock:
+        entry = registry.pop(client_id, None)
+    if entry is None:
+        return
+    _schedule_ws_close(entry.loop, entry.ws)
 
 
 def register_anonymous_ws(client_id: str | None, ws: Any, loop: Any) -> None:
@@ -90,28 +138,32 @@ def register_anonymous_ws(client_id: str | None, ws: Any, loop: Any) -> None:
     such a socket can't be correlated to a later login and falls back to the
     reactive 4401-then-reconnect path.
     """
-    if not client_id:
-        return
-    with _ws_registry_lock:
-        _WS_BY_CLIENT[client_id] = _WSEntry(ws, loop)
+    _register_ws(_WS_BY_CLIENT, client_id, ws, loop)
 
 
 def close_anonymous_ws(client_id: str | None) -> None:
     """Close the browser's pre-login socket so the renderer reconnects authed.
 
-    Called when ``client_id`` authenticates over HTTP. The close code (``4408``)
-    is outside the renderer's no-reconnect set (``1000``/``4001``), so the
-    SharedWorker dials a fresh handshake that carries the now-present session
-    cookie -- before the user's first click rather than after a sacrificed one.
-    Popping the entry also deregisters it, keeping the map from leaking.
+    Called when ``client_id`` authenticates over HTTP, so the reconnect happens
+    before the user's first click rather than after a sacrificed one. Popping
+    the entry also deregisters it, keeping the map from leaking.
     """
-    if not client_id:
-        return
-    with _ws_registry_lock:
-        entry = _WS_BY_CLIENT.pop(client_id, None)
-    if entry is None:
-        return
-    _schedule_ws_close(entry.loop, entry.ws)
+    _close_ws(_WS_BY_CLIENT, client_id)
+
+
+def close_authenticated_ws(client_id: str | None) -> None:
+    """Close the browser's logged-in socket so a logout takes effect on it.
+
+    A socket's user is a snapshot taken at the handshake: clearing the session
+    over HTTP cannot reach it, so without this an already-open socket keeps
+    running protected callbacks after logout. The forced reconnect handshakes
+    with the cleared session and is anonymous from then on.
+
+    shortcut: the registry is per-process, so with several worker processes a
+    logout only retires a socket served by the same worker; upgrade to a shared
+    session store with server-side revocation if that matters.
+    """
+    _close_ws(_AUTHED_WS_BY_CLIENT, client_id)
 
 
 def _schedule_ws_close(loop: Any, ws: Any) -> None:
@@ -198,10 +250,10 @@ def _authorize_ws_message(ws: Any, message: dict) -> bool | tuple[int, str]:
 def _ws_connect_hook(ws: Any):
     """Global Dash websocket_connect hook: register the socket by client id.
 
-    Runs at the handshake (before accept) for every socket. Tracks only sockets
-    that handshake *anonymously*, keyed by browser (the ``dac_client`` cookie),
-    so a later login can retire them; an already-authenticated socket needs no
-    retiring and is left untracked. Always allows the connection -- public pages
+    Runs at the handshake (before accept) for every socket. Tracks each socket
+    keyed by browser (the ``dac_client`` cookie): one that handshakes
+    *anonymously* so a later login can retire it, an authenticated one so a
+    later logout can. Always allows the connection -- public pages
     legitimately stream over an unauthenticated socket, so this hook must never
     reject.
 
@@ -216,18 +268,18 @@ def _ws_connect_hook(ws: Any):
 
 
 def _track_anonymous_ws(ws: Any) -> None:
-    """Register ``ws`` if its handshake was anonymous (see ``_ws_connect_hook``)."""
+    """Register ``ws`` by browser and auth state (see ``_ws_connect_hook``)."""
     backend = get_active_backend()
     _, user = backend.ws_identity(ws)
-    if user is not None:
-        return  # already authenticated -- nothing to retire later
+    # Anonymous sockets are retired on login, authenticated ones on logout.
+    registry = _WS_BY_CLIENT if user is None else _AUTHED_WS_BY_CLIENT
     client_id = getattr(ws, "cookies", {}).get(WS_CLIENT_COOKIE)
     # Resolve the concrete socket: Quart hands us a context-local proxy that
     # can't be closed from the later (different-task) login, so we must keep the
     # underlying object. Starlette's WebSocket has no such proxy and is stored
     # as-is.
     real_ws = ws._get_current_object() if hasattr(ws, "_get_current_object") else ws
-    register_anonymous_ws(client_id, real_ws, asyncio.get_running_loop())
+    _register_ws(registry, client_id, real_ws, asyncio.get_running_loop())
 
 
 def _ensure_hook_registered() -> None:
