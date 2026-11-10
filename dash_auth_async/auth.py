@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 
 from dash import Dash
 
+# Dash's pre-setup callback registry; no public API equivalent exists.
+from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
+
 from .backends import Backend, detect_backend, set_active_backend
 from .public_routes import (
     add_public_routes,
@@ -107,18 +110,9 @@ class Auth(ABC):
             if body.get("output") in public_callbacks:
                 return None
 
-            # Check whether the callback has an input using the pathname,
-            # such a callback will be a routing callback and the pathname
-            # should be checked against the public routes
-            pathname = next(
-                (
-                    inp.get("value")
-                    for inp in body.get("inputs", [])
-                    if isinstance(inp, dict) and inp.get("property") == "pathname"
-                ),
-                None,
-            )
-            if pathname and public_routes.test(pathname):
+            # A routing callback (one registered with a pathname input) is
+            # public when that pathname hits a public route
+            if self._is_public_routing_callback(body):
                 return None
 
         # If the route is not a callback route, check whether the path
@@ -149,19 +143,51 @@ class Auth(ABC):
         if payload.get("output") in public_callbacks:
             return True
 
-        public_routes = get_public_routes(self.app)
-        pathname = next(
-            (
-                inp.get("value")
-                for inp in payload.get("inputs", [])
-                if isinstance(inp, dict) and inp.get("property") == "pathname"
-            ),
-            None,
-        )
-        if pathname and public_routes.test(pathname):
+        if self._is_public_routing_callback(payload):
             return True
 
         return user is not None
+
+    def _is_public_routing_callback(self, body: dict) -> bool:
+        """Whether ``body`` invokes a routing callback on a public pathname.
+
+        Which arguments are pathnames is read from the *registered* callback,
+        never from the request: the body's own ``property`` labels are
+        client-controlled, and Dash only validates the argument count. Trusting
+        them let any callback be invoked unauthenticated by relabelling one
+        input as ``pathname`` with a public-route value.
+
+        Returns:
+            True if the callback declares pathname inputs and every value the
+            request supplies for them matches a public route.
+        """
+        output = body.get("output")
+        if not isinstance(output, str):
+            return False
+        # Callbacks sit in Dash's global map until its first-request setup
+        # migrates them onto the app, which may not have run yet.
+        spec = self.app.callback_map.get(output) or GLOBAL_CALLBACK_MAP.get(output)
+        if not spec:
+            return False
+
+        # Dash builds the callback arguments positionally from inputs + state,
+        # so index the same flat list to see exactly what the callback receives.
+        inputs, state = body.get("inputs"), body.get("state")
+        args = [
+            *(inputs if isinstance(inputs, list) else []),
+            *(state if isinstance(state, list) else []),
+        ]
+        pathnames = [
+            args[i].get("value")
+            if i < len(args) and isinstance(args[i], dict)
+            else None
+            for i, dep in enumerate(spec["inputs"])
+            if dep.get("property") == "pathname"
+        ]
+        public_routes = get_public_routes(self.app)
+        return bool(pathnames) and all(
+            isinstance(p, str) and p and public_routes.test(p) for p in pathnames
+        )
 
     @abstractmethod
     def is_authorized(self):

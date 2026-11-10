@@ -8,7 +8,7 @@ with (path, body) as specified in the pluggable-backend design spec.
 from types import SimpleNamespace
 
 import pytest
-from dash import Dash
+from dash import Dash, Input, Output, State
 
 from dash_auth_async.auth import Auth
 from dash_auth_async.backends import Backend
@@ -94,20 +94,106 @@ def test_public_callback_is_allowed():
     assert authorize(auth, CALLBACK_PATH, body) is None
 
 
-def test_routing_callback_with_public_pathname_is_allowed():
-    auth = StubAuth(Dash(__name__), authorized=False, public_routes=["/home"])
-    body = {
+def _app_with_callbacks():
+    """App with one routing callback (pathname input) and one private one."""
+    app = Dash(__name__)
+
+    @app.callback(
+        Output("page", "children"),
+        Input("url", "pathname"),
+        State("store", "data"),
+    )
+    def route(pathname, data):
+        return pathname
+
+    @app.callback(
+        Output("secret", "children"),
+        Input("btn", "n_clicks"),
+        State("q", "value"),
+    )
+    def secret(n_clicks, value):
+        return "secret"
+
+    return app
+
+
+def _routing_body(pathname):
+    return {
         "output": "page.children",
-        "inputs": [{"property": "pathname", "value": "/home"}],
+        "inputs": [{"id": "url", "property": "pathname", "value": pathname}],
+        "state": [{"id": "store", "property": "data", "value": None}],
     }
-    assert authorize(auth, CALLBACK_PATH, body) is None
+
+
+def test_routing_callback_with_public_pathname_is_allowed():
+    auth = StubAuth(_app_with_callbacks(), authorized=False, public_routes=["/home"])
+    assert authorize(auth, CALLBACK_PATH, _routing_body("/home")) is None
+    assert auth.authorize_ws(_routing_body("/home"), None) is True
 
 
 def test_routing_callback_with_private_pathname_returns_login_request():
-    auth = StubAuth(Dash(__name__), authorized=False, public_routes=["/home"])
+    auth = StubAuth(_app_with_callbacks(), authorized=False, public_routes=["/home"])
+    assert authorize(auth, CALLBACK_PATH, _routing_body("/private")) == LOGIN
+    assert auth.authorize_ws(_routing_body("/private"), None) is False
+
+
+@pytest.mark.parametrize(
+    "inputs, state",
+    [
+        # The registered n_clicks input relabelled as a pathname.
+        (
+            [{"id": "btn", "property": "pathname", "value": "/home"}],
+            [{"id": "q", "property": "value", "value": "x"}],
+        ),
+        # Same, using a default public route as the pass value.
+        (
+            [{"id": "btn", "property": "pathname", "value": "/_dash-layout"}],
+            [{"id": "q", "property": "value", "value": "x"}],
+        ),
+        # The state argument moved into ``inputs`` and relabelled.
+        (
+            [
+                {"id": "btn", "property": "n_clicks", "value": 1},
+                {"id": "q", "property": "pathname", "value": "/home"},
+            ],
+            [],
+        ),
+    ],
+)
+def test_relabelling_an_input_as_pathname_does_not_bypass_auth(inputs, state):
+    """The body's ``property`` labels are client-controlled and must not decide
+    whether a callback is a routing callback.
+
+    Regression: Dash only validates the argument count, so relabelling any
+    input of a private callback as ``pathname`` with a public-route value
+    skipped ``is_authorized()`` entirely.
+    """
+    auth = StubAuth(_app_with_callbacks(), authorized=False, public_routes=["/home"])
+    body = {"output": "secret.children", "inputs": inputs, "state": state}
+    assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+    assert auth.authorize_ws(body, None) is False
+
+
+def test_routing_pathname_is_read_at_the_registered_position():
+    """A public value on a *different* argument must not vouch for a private
+    pathname: only the argument the callback receives as pathname counts."""
+    auth = StubAuth(_app_with_callbacks(), authorized=False, public_routes=["/home"])
     body = {
         "output": "page.children",
-        "inputs": [{"property": "pathname", "value": "/private"}],
+        "inputs": [
+            {"id": "url", "property": "pathname", "value": "/private"},
+            {"id": "store", "property": "pathname", "value": "/home"},
+        ],
+        "state": [],
+    }
+    assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+
+
+def test_unregistered_callback_with_public_pathname_returns_login_request():
+    auth = StubAuth(_app_with_callbacks(), authorized=False, public_routes=["/home"])
+    body = {
+        "output": "nope.children",
+        "inputs": [{"id": "url", "property": "pathname", "value": "/home"}],
     }
     assert authorize(auth, CALLBACK_PATH, body) == LOGIN
 
