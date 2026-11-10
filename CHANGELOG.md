@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2026-11-10
+
+### Security
+- Bumped `authlib` to 1.9.5 and `joserfc`, `pyjwt`, `filelock`, `anyio`, `certifi`, `urllib3`, `virtualenv`, `werkzeug`, `opentelemetry-api`, `nbconvert`, `soupsieve`, `setuptools`, and `tornado` (all transitive) to versions patching open Dependabot advisories. The runtime `authlib` floor is raised to `>=1.9.1`, so installs can no longer resolve a vulnerable Authlib. `tornado>=6.6` is required on Python 3.11+; Python 3.10 stays on 6.5.x until it is dropped, so those tornado advisories remain open on 3.10
+- Known open on Python 3.10: `filelock` 4.1.0 (the fixed 4.2.x line needs Python 3.11+)
+
 ## [1.3.5]
 
 ### Security
