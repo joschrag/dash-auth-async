@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Fixed
 - `BasicAuth` no longer raises a server error for passwords containing non-ASCII characters. The constant-time comparison was done on `str`, which `hmac.compare_digest` rejects for non-ASCII input — so any client could trigger a `500`, and a user whose password contained e.g. an umlaut could never log in. Credentials are now compared as UTF-8 bytes
+- A callback request whose JSON body is not an object (a list, string or number) now fails closed as unauthorised instead of raising a server error
+- FastAPI: a `SessionMiddleware` installed by the application *before* `BasicAuth(...)`/`OIDCAuth(...)` no longer makes every request fail with a `500`. It ended up inside the auth middleware, where the session it provides was unreadable; it is now hoisted to the outside of the middleware stack
 
 ## [1.3.4] - 2026-09-07
 

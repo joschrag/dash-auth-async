@@ -101,9 +101,10 @@ class Auth(ABC):
         public_routes = get_public_routes(self.app)
         public_callbacks = get_public_callbacks(self.app)
         if path == self._callback_path():
-            # Treat a missing or unparseable body as unauthorised rather
-            # than crashing with AttributeError/KeyError → 500.
-            if not body:
+            # Treat a missing, unparseable or non-object body (valid JSON
+            # that is a list/string/number) as unauthorised rather than
+            # crashing with AttributeError/KeyError → 500.
+            if not body or not isinstance(body, dict):
                 return self.login_request()
 
             # Check whether the callback is marked as public
