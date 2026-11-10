@@ -7,7 +7,12 @@ from dash import Dash
 # Dash's pre-setup callback registry; no public API equivalent exists.
 from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
 
-from .backends import Backend, detect_backend, set_active_backend
+from .backends import (
+    Backend,
+    detect_backend,
+    register_backend,
+    set_active_backend,
+)
 from .public_routes import (
     add_public_routes,
     get_public_callbacks,
@@ -32,6 +37,9 @@ class Auth(ABC):
         :param app: Dash app
         :param public_routes: list of public routes, routes should follow the
             Flask route syntax
+        :param backend: framework adapter to use. ``None`` (default) detects it
+            from the server type; pass a custom ``Backend`` for a server that
+            is not Flask, Quart or FastAPI.
 
         Raises:
             TypeError: if any deprecated/unexpected keyword argument is passed.
@@ -42,6 +50,7 @@ class Auth(ABC):
 
         self.app = app
         self.backend = backend if backend is not None else detect_backend(app.server)
+        register_backend(app.server, self.backend)
         set_active_backend(self.backend)
         self._protect()
         if public_routes is not None:

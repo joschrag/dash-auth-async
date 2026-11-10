@@ -231,3 +231,40 @@ def test_callback_path_respects_url_base_prefix():
     )
     assert auth._callback_path() == "/app/_dash-update-component"
     assert authorize(auth, "/app/_dash-update-component", None) == LOGIN
+
+
+class _CustomServer:
+    """A server type none of the built-in backends recognises."""
+
+    def __init__(self):
+        self.config = {}
+
+
+class _CustomApp:
+    """Minimal Dash-app double running on a custom server."""
+
+    def __init__(self):
+        self.server = _CustomServer()
+        self.config = {}
+        self.callback_map = {}
+
+
+def test_custom_backend_is_used_for_an_unrecognised_server():
+    """``backend=`` exists for servers that are not Flask/Quart/FastAPI.
+
+    Regression: the public-route helpers re-detected the backend from the
+    server type on every call, so a custom backend raised
+    ``NotImplementedError`` at construction and on every request.
+    """
+    auth = StubAuth(_CustomApp(), authorized=False, public_routes=["/home"])
+    assert authorize(auth, "/home") is None
+    assert authorize(auth, "/private") == LOGIN
+    assert authorize(auth, CALLBACK_PATH, {"output": "x", "inputs": []}) == LOGIN
+
+
+def test_basic_auth_forwards_a_custom_backend():
+    from dash_auth_async import BasicAuth
+
+    backend = FakeBackend()
+    auth = BasicAuth(Dash(__name__), {"alice": "secret"}, backend=backend)
+    assert auth.backend is backend

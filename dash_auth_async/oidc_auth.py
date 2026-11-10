@@ -15,7 +15,7 @@ from werkzeug.routing import Map, Rule
 from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 
-from .backends import detect_backend
+from .backends import Backend, detect_backend
 from .websocket_auth import WS_CLIENT_COOKIE, close_authenticated_ws
 
 if TYPE_CHECKING:
@@ -43,6 +43,7 @@ class OIDCAuth(Auth):
         public_routes: list | None = None,
         logout_page: str | Response | None = None,
         secure_session: bool = False,
+        backend: Backend | None = None,
     ):
         """Secure a Dash app through OpenID Connect.
 
@@ -97,13 +98,16 @@ class OIDCAuth(Auth):
             On Flask/Quart this sets SESSION_COOKIE_SECURE and
             SESSION_COOKIE_HTTPONLY; on FastAPI it sets the Starlette
             SessionMiddleware ``https_only`` flag (HttpOnly is always on).
+        backend : Backend, optional
+            Framework adapter to use, by default None (detected from the
+            server type).
 
         Raises:
             RuntimeError: if ``app.server.secret_key`` is not defined.
             Exception: if the login or callback route lacks an ``<idp>``
                 placeholder.
         """
-        super().__init__(app, public_routes=public_routes)
+        super().__init__(app, public_routes=public_routes, backend=backend)
 
         if isinstance(force_https_callback, str):
             self.force_https_callback = force_https_callback in os.environ

@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, MutableMapping
 from contextvars import ContextVar
 from typing import Any
+from weakref import WeakKeyDictionary
 
 import flask
 
@@ -885,8 +886,30 @@ class FastAPIBackend(Backend):
         server.add_middleware(_AuthMiddleware)
 
 
+# server -> the backend its ``Auth`` was constructed with. Helpers that only
+# hold the server (public routes/callbacks, ``get_oauth``) resolve through
+# ``detect_backend``, which must hand back an explicitly passed custom backend
+# rather than re-detecting by server type. Weak keys so test apps are collected.
+_BACKEND_BY_SERVER: WeakKeyDictionary[Any, Backend] = WeakKeyDictionary()
+
+
+def register_backend(server: Any, backend: Backend) -> None:
+    """Record ``backend`` as the one serving ``server`` (see ``detect_backend``)."""
+    _BACKEND_BY_SERVER[server] = backend
+
+
 def detect_backend(server: Any) -> Backend:
-    """Return the matching backend for a Flask, Quart, or FastAPI server."""
+    """Return the backend for a server.
+
+    The backend registered for it by ``Auth.__init__`` if any, otherwise the
+    one matching a Flask, Quart, or FastAPI server type.
+    """
+    try:
+        registered = _BACKEND_BY_SERVER.get(server)
+    except TypeError:  # server type that can't be weakly referenced
+        registered = None
+    if registered is not None:
+        return registered
     if quart is not None:
         if isinstance(server, quart.Quart):
             return QuartBackend()
