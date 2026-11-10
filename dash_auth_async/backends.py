@@ -632,11 +632,18 @@ class FastAPIBackend(Backend):
         return PlainTextResponse(str(result))
 
     @staticmethod
-    def _has_session_middleware(server) -> bool:
-        return any(
-            getattr(m, "cls", None) is SessionMiddleware
-            for m in getattr(server, "user_middleware", [])
+    def _session_middleware(server) -> Any:
+        return next(
+            (
+                m
+                for m in getattr(server, "user_middleware", [])
+                if getattr(m, "cls", None) is SessionMiddleware
+            ),
+            None,
         )
+
+    def _has_session_middleware(self, server) -> bool:
+        return self._session_middleware(server) is not None
 
     def setup_session(
         self, server, secret_key: str | None, secure_session: bool = False
@@ -648,10 +655,18 @@ class FastAPIBackend(Backend):
         silently dropped. Starlette always sets ``HttpOnly``. Defers to a
         user-installed ``SessionMiddleware`` (opt-out/override) and is
         idempotent — never adds a second instance.
+
+        Either way the session middleware ends up *outermost*: the auth
+        middleware reads ``request.session``, so one the user installed before
+        ``Auth(...)`` (which would sit inside the auth middleware, leaving the
+        session unreadable there) is hoisted to the front of the stack.
         """
-        if secret_key is None:
+        existing = self._session_middleware(server)
+        if existing is not None:
+            server.user_middleware.remove(existing)
+            server.user_middleware.insert(0, existing)
             return
-        if self._has_session_middleware(server):
+        if secret_key is None:
             return
         server.add_middleware(
             SessionMiddleware, secret_key=secret_key, https_only=secure_session

@@ -213,6 +213,17 @@ def test_callback_body_without_inputs_key_does_not_crash():
     assert authorize(auth, CALLBACK_PATH, {"output": "x"}) == LOGIN
 
 
+@pytest.mark.parametrize("body", [[1], "x", 5, {"output": "x", "inputs": 5}])
+def test_callback_with_non_object_body_returns_login_request(body):
+    """Valid JSON that is not the expected object must fail closed, not 500.
+
+    Regression: a list/string/number body reached ``body.get`` and raised
+    ``AttributeError``, so any unauthenticated client could trigger a 500.
+    """
+    auth = StubAuth(Dash(__name__), authorized=False)
+    assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+
+
 def test_callback_path_respects_url_base_prefix():
     auth = StubAuth(
         Dash(__name__, url_base_pathname="/app/"),

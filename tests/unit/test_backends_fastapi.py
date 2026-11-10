@@ -1,5 +1,5 @@
 import pytest
-from dash import Dash
+from dash import Dash, html
 
 pytest.importorskip("fastapi", reason="FastAPI extra dependencies are not installed")
 
@@ -369,3 +369,37 @@ def test_config_store_read_roundtrip_via_state():
     assert backend.read_config(app, "PUBLIC_ROUTES", "fallback") == "fallback"
     backend.store_config(app, "PUBLIC_ROUTES", ["/home"])
     assert backend.read_config(app, "PUBLIC_ROUTES") == ["/home"]
+
+
+def test_user_session_middleware_installed_before_auth_is_readable():
+    """A ``SessionMiddleware`` the user installed *before* ``Auth(...)`` must
+    still wrap the auth middleware.
+
+    Regression: ``setup_session`` deferred to it but left it inside the auth
+    middleware, so the session was unreadable there and every request raised
+    ``RuntimeError`` -> 500.
+    """
+    from fastapi.testclient import TestClient
+    from starlette.middleware.sessions import SessionMiddleware
+
+    from dash_auth_async import OIDCAuth
+
+    app = Dash(__name__, backend="fastapi")
+    app.layout = html.Div("hi")
+    app.server.add_middleware(SessionMiddleware, secret_key="Test!")
+    oidc = OIDCAuth(app)  # no secret_key: defers to the user's middleware
+    oidc.register_provider(
+        "idp",
+        client_id="x",
+        client_secret="y",
+        authorize_url="https://idp.example/auth",
+        access_token_url="https://idp.example/token",
+    )
+
+    count = sum(1 for m in app.server.user_middleware if m.cls is SessionMiddleware)
+    assert count == 1
+    assert app.server.user_middleware[0].cls is SessionMiddleware  # outermost
+
+    response = TestClient(app.server).get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"].startswith("https://idp.example/auth")
