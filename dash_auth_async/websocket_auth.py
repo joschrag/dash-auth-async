@@ -134,11 +134,19 @@ def _close_ws(registry: dict[str, _WSEntry], client_id: str | None) -> None:
 def register_anonymous_ws(client_id: str | None, ws: Any, loop: Any) -> None:
     """Track a browser's current pre-login socket, replacing any stale prior.
 
-    No-op without a client id (e.g. a backend that never minted the cookie):
-    such a socket can't be correlated to a later login and falls back to the
-    reactive 4401-then-reconnect path.
+    No-op without a (plausible) client id (e.g. a backend that never minted the
+    cookie): such a socket can't be correlated to a later login and falls back
+    to the reactive 4401-then-reconnect path. The registry is capped at
+    ``_MAX_TRACKED_WS`` entries, evicting the oldest first.
     """
-    _register_ws(_WS_BY_CLIENT, client_id, ws, loop)
+    if not client_id or len(client_id) > _MAX_CLIENT_ID_LEN:
+        return
+    with _ws_registry_lock:
+        # Pop first so a reconnect re-enters as the newest entry.
+        _WS_BY_CLIENT.pop(client_id, None)
+        while len(_WS_BY_CLIENT) >= _MAX_TRACKED_WS:
+            del _WS_BY_CLIENT[next(iter(_WS_BY_CLIENT))]
+        _WS_BY_CLIENT[client_id] = _WSEntry(ws, loop)
 
 
 def close_anonymous_ws(client_id: str | None) -> None:
