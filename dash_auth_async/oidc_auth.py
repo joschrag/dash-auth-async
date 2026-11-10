@@ -16,6 +16,7 @@ from dash_auth_async.auth import Auth
 from dash_auth_async.public_routes import get_url_base
 
 from .backends import detect_backend
+from .websocket_auth import WS_CLIENT_COOKIE, close_authenticated_ws
 
 if TYPE_CHECKING:
     from authlib.integrations.flask_client.apps import (
@@ -324,6 +325,9 @@ class OIDCAuth(Auth):
         Returns:
             The logged-out page content.
         """
+        # The open socket's user is a handshake-time snapshot the cleared
+        # session can't reach: retire it so the logout applies there too.
+        close_authenticated_ws(self.request.cookies.get(WS_CLIENT_COOKIE))
         self.session.clear()
         base_url = get_url_base(self.app) or "/"
         page = (

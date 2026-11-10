@@ -211,9 +211,10 @@ def _use_backend(monkeypatch, user) -> None:
     )
 
 
-def test_authenticated_handshake_is_not_tracked(monkeypatch):
-    """A socket that handshakes already authenticated is never retired, so the
-    registry must not hold it (else authenticated sockets leak unboundedly).
+def test_authenticated_handshake_is_not_tracked_as_anonymous(monkeypatch):
+    """A socket that handshakes already authenticated must stay out of the
+    *anonymous* registry: every authorized HTTP request retires that entry, and
+    it must never close a logged-in socket.
     """
     from dash_auth_async.websocket_auth import _WS_BY_CLIENT
 
@@ -223,6 +224,45 @@ def test_authenticated_handshake_is_not_tracked(monkeypatch):
     _run_connect_hook(_FakeWS("client-1"))
 
     assert _tracked_count("client-1") == 0
+
+
+def test_oidc_logout_closes_the_authenticated_socket_of_that_browser(monkeypatch):
+    """Logging out must retire the open authenticated socket of that browser.
+
+    Regression: the user of a socket is a snapshot taken at the handshake, so
+    clearing the session over HTTP left an already-open socket able to keep
+    running protected callbacks after logout.
+    """
+    from dash import Dash
+
+    from dash_auth_async import OIDCAuth, websocket_auth
+
+    websocket_auth._AUTHED_WS_BY_CLIENT.clear()
+    app = Dash(__name__)
+    oidc = OIDCAuth(app, secret_key="Test")
+    # After OIDCAuth(...): constructing it set the real (Flask) active backend.
+    _use_backend(monkeypatch, {"email": "a@b.c", "groups": []})
+    mine, other = _FakeWS("client-mine"), _FakeWS("client-other")
+
+    async def run():
+        websocket_auth._ws_connect_hook(mine)
+        websocket_auth._ws_connect_hook(other)
+        # An ordinary authorized request retires only *anonymous* sockets.
+        websocket_auth.close_anonymous_ws("client-mine")
+        await asyncio.sleep(0.01)
+        assert mine.close_code is None
+
+        with app.server.test_request_context(
+            "/oidc/logout", headers={"Cookie": "dac_client=client-mine"}
+        ):
+            oidc.logout()
+        await asyncio.sleep(0.01)  # let the scheduled close run
+
+    asyncio.run(run())
+
+    assert mine.close_code == 4408
+    assert other.close_code is None  # the socket of another browser is untouched
+    assert "client-mine" not in websocket_auth._AUTHED_WS_BY_CLIENT
 
 
 def test_reconnect_does_not_accumulate_entries(monkeypatch):
