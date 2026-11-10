@@ -123,9 +123,10 @@ class BasicAuth(Auth):
             # (compare `password` against itself, then discard the result) so
             # response timing doesn't reveal which usernames exist.
             reference = stored_password if stored_password is not None else password
-            authorized = hmac.compare_digest(reference, password) and (
-                stored_password is not None
-            )
+            # Compare bytes: compare_digest raises TypeError on non-ASCII str.
+            authorized = hmac.compare_digest(
+                reference.encode("utf-8"), password.encode("utf-8")
+            ) and (stored_password is not None)
         if authorized:
             try:
                 self.session["user"] = {"email": username, "groups": []}
