@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+from html import escape
 from typing import TYPE_CHECKING
 
 import dash
@@ -354,8 +355,10 @@ class OIDCAuth(Auth):
         Returns:
             The post-login redirect, or an error tuple on failure.
         """
+        # `idp` and the IdP error text are request-controlled and Flask/Quart
+        # render a returned str as text/html: escape them (reflected XSS).
         if idp not in self.oauth._registry:
-            return f"'{idp}' is not a valid registered idp", 400
+            return f"'{escape(idp)}' is not a valid registered idp", 400
 
         oauth_client = self.get_oauth_client(idp)
         oauth_kwargs = self.get_oauth_kwargs(idp)
@@ -365,7 +368,7 @@ class OIDCAuth(Auth):
                 **oauth_kwargs.get("authorize_token_kwargs", {}),
             )
         except OAuthError as err:
-            return str(err), 401
+            return escape(str(err)), 401
 
         user = token.get("userinfo")
         return self.after_logged_in(user, idp, token)
@@ -381,7 +384,7 @@ class OIDCAuth(Auth):
         """
         if idp not in self.oauth._registry:
             return self.backend.coerce_response(
-                (f"'{idp}' is not a valid registered idp", 400)
+                (f"'{escape(idp)}' is not a valid registered idp", 400)
             )
 
         oauth_client = self.get_oauth_client(idp)
@@ -392,7 +395,7 @@ class OIDCAuth(Auth):
                 **oauth_kwargs.get("authorize_token_kwargs", {}),
             )
         except OAuthError as err:
-            return self.backend.coerce_response((str(err), 401))
+            return self.backend.coerce_response((escape(str(err)), 401))
 
         user = token.get("userinfo")
         return self.backend.coerce_response(self.after_logged_in(user, idp, token))

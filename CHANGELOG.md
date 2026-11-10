@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Security
 - Closed an authentication bypass in the routing-callback check. A callback request was treated as a (public) routing callback whenever its body *labelled* an input as `pathname` with a public-route value; Dash only validates the argument count, so any callback could be invoked unauthenticated by relabelling one input (the default public routes such as `/_dash-layout` served as the pass value whenever `public_routes` was configured). Which arguments are pathnames is now read from the registered callback definition, on both the HTTP and WebSocket paths. Inherited from upstream `dash-auth`
+- Fixed a reflected XSS on the OIDC callback route (Flask and Quart). The `<idp>` path segment and the IdP's `error_description` query parameter were echoed unescaped in a `text/html` error response on a route that is necessarily public; both are now HTML-escaped. Inherited from upstream `dash-auth`
 
 ## [1.3.4] - 2026-09-07
 
