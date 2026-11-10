@@ -240,6 +240,39 @@ def test_reconnect_does_not_accumulate_entries(monkeypatch):
     assert _tracked_count("client-2") == 1
 
 
+def test_registry_is_bounded_against_client_chosen_ids(monkeypatch):
+    """The ``dac_client`` cookie is client-supplied and there is no disconnect
+    hook to deregister on, so the registry must cap itself.
+
+    Regression: an unauthenticated client handshaking with a fresh cookie value
+    each time grew the map (pinning every socket) without bound.
+    """
+    from dash_auth_async import websocket_auth
+
+    websocket_auth._WS_BY_CLIENT.clear()
+    monkeypatch.setattr(websocket_auth, "_MAX_TRACKED_WS", 3)
+    _use_backend(monkeypatch, None)  # anonymous handshakes
+
+    for i in range(10):
+        _run_connect_hook(_FakeWS(f"client-{i}"))
+
+    # Only the newest three survive; the oldest were evicted.
+    assert list(websocket_auth._WS_BY_CLIENT) == ["client-7", "client-8", "client-9"]
+
+
+def test_oversized_client_id_is_not_tracked(monkeypatch):
+    """An id far longer than anything ``mint_ws_client_id`` produces was not
+    minted here; storing it would let a client choose the key size."""
+    from dash_auth_async import websocket_auth
+
+    websocket_auth._WS_BY_CLIENT.clear()
+    _use_backend(monkeypatch, None)
+
+    _run_connect_hook(_FakeWS("x" * 5000))
+
+    assert not websocket_auth._WS_BY_CLIENT
+
+
 def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
     """With two dash-auth-async apps in the process, the hook consults only the
     Auth registered for ``quart.current_app`` -- not some other app's Auth.

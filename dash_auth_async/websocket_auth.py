@@ -77,6 +77,16 @@ class _WSEntry:
 _WS_BY_CLIENT: dict[str, _WSEntry] = {}
 _ws_registry_lock = threading.Lock()
 
+# The key is a *client-supplied* cookie and Dash has no disconnect hook to
+# deregister on, so an unauthenticated client handshaking with a fresh id each
+# time would otherwise grow the map (and pin every socket) without bound.
+# shortcut: oldest-first eviction, an evicted browser only loses the proactive
+# reconnect and falls back to the reactive 4401-then-reconnect path; upgrade to
+# deregistering on disconnect if Dash ever exposes a websocket_disconnect hook.
+_MAX_TRACKED_WS = 10_000
+# Minted ids are 22 characters; anything much longer was not minted here.
+_MAX_CLIENT_ID_LEN = 64
+
 
 def mint_ws_client_id() -> str:
     """Return a fresh, opaque browser-stable client id for the cookie."""
@@ -86,13 +96,18 @@ def mint_ws_client_id() -> str:
 def register_anonymous_ws(client_id: str | None, ws: Any, loop: Any) -> None:
     """Track a browser's current pre-login socket, replacing any stale prior.
 
-    No-op without a client id (e.g. a backend that never minted the cookie):
-    such a socket can't be correlated to a later login and falls back to the
-    reactive 4401-then-reconnect path.
+    No-op without a (plausible) client id (e.g. a backend that never minted the
+    cookie): such a socket can't be correlated to a later login and falls back
+    to the reactive 4401-then-reconnect path. The registry is capped at
+    ``_MAX_TRACKED_WS`` entries, evicting the oldest first.
     """
-    if not client_id:
+    if not client_id or len(client_id) > _MAX_CLIENT_ID_LEN:
         return
     with _ws_registry_lock:
+        # Pop first so a reconnect re-enters as the newest entry.
+        _WS_BY_CLIENT.pop(client_id, None)
+        while len(_WS_BY_CLIENT) >= _MAX_TRACKED_WS:
+            del _WS_BY_CLIENT[next(iter(_WS_BY_CLIENT))]
         _WS_BY_CLIENT[client_id] = _WSEntry(ws, loop)
 
 
