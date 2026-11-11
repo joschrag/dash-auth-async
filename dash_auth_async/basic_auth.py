@@ -10,6 +10,7 @@ from typing import cast
 from dash import Dash
 
 from .auth import Auth
+from .backends import Backend
 
 UserGroups = dict[str, list[str]]
 
@@ -25,6 +26,7 @@ class BasicAuth(Auth):
         public_routes: list | None = None,
         user_groups: UserGroups | Callable[[str], UserGroups] | None = None,
         secret_key: str | None = None,
+        backend: Backend | None = None,
     ):
         """Add basic authentication to Dash.
 
@@ -51,6 +53,8 @@ class BasicAuth(Auth):
             Note that you should not do this dynamically:
             you should create a key and then assign the value of
             that key in your code.
+        :param backend: framework adapter to use; ``None`` (default) detects
+            it from the server type.
 
         Raises:
             ValueError: if both ``auth_func`` and ``username_password_list``
@@ -82,7 +86,7 @@ class BasicAuth(Auth):
                 if isinstance(username_password_list, dict)
                 else {k: v for k, v in username_password_list}
             )
-        super().__init__(app, public_routes=public_routes)
+        super().__init__(app, public_routes=public_routes, backend=backend)
 
         # After super().__init__: self.backend now exists, and the auth
         # middleware is registered, so SessionMiddleware (added here) lands
