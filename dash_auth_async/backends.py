@@ -891,11 +891,25 @@ class FastAPIBackend(Backend):
 # ``detect_backend``, which must hand back an explicitly passed custom backend
 # rather than re-detecting by server type. Weak keys so test apps are collected.
 _BACKEND_BY_SERVER: WeakKeyDictionary[Any, Backend] = WeakKeyDictionary()
+# Fallback for servers that can't be weakly referenced (e.g. ``__slots__``),
+# keyed by ``id``; holding the server keeps its id from being reused.
+_BACKEND_BY_SERVER_ID: dict[int, tuple[Any, Backend]] = {}
 
 
 def register_backend(server: Any, backend: Backend) -> None:
     """Record ``backend`` as the one serving ``server`` (see ``detect_backend``)."""
-    _BACKEND_BY_SERVER[server] = backend
+    try:
+        _BACKEND_BY_SERVER[server] = backend
+    except TypeError:  # not weakly referenceable
+        _BACKEND_BY_SERVER_ID[id(server)] = (server, backend)
+
+
+def _registered_backend(server: Any) -> Backend | None:
+    try:
+        return _BACKEND_BY_SERVER.get(server)
+    except TypeError:  # not weakly referenceable
+        entry = _BACKEND_BY_SERVER_ID.get(id(server))
+        return entry[1] if entry is not None and entry[0] is server else None
 
 
 def detect_backend(server: Any) -> Backend:
@@ -904,10 +918,7 @@ def detect_backend(server: Any) -> Backend:
     The backend registered for it by ``Auth.__init__`` if any, otherwise the
     one matching a Flask, Quart, or FastAPI server type.
     """
-    try:
-        registered = _BACKEND_BY_SERVER.get(server)
-    except TypeError:  # server type that can't be weakly referenced
-        registered = None
+    registered = _registered_backend(server)
     if registered is not None:
         return registered
     if quart is not None:

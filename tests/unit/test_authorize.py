@@ -243,8 +243,8 @@ class _CustomServer:
 class _CustomApp:
     """Minimal Dash-app double running on a custom server."""
 
-    def __init__(self):
-        self.server = _CustomServer()
+    def __init__(self, server=None):
+        self.server = server if server is not None else _CustomServer()
         self.config = {}
         self.callback_map = {}
 
@@ -268,3 +268,24 @@ def test_basic_auth_forwards_a_custom_backend():
     backend = FakeBackend()
     auth = BasicAuth(Dash(__name__), {"alice": "secret"}, backend=backend)
     assert auth.backend is backend
+
+
+class _SlottedServer:
+    """A custom server that can't be weakly referenced (``__slots__``)."""
+
+    __slots__ = ("config",)
+
+    def __init__(self):
+        self.config = {}
+
+
+def test_custom_backend_works_for_a_server_without_weakref_support():
+    """Regression: ``register_backend`` keyed a ``WeakKeyDictionary`` without
+    the ``TypeError`` guard ``detect_backend`` has, so ``Auth(...)`` crashed
+    for exactly the custom servers ``backend=`` exists for.
+    """
+    auth = StubAuth(
+        _CustomApp(_SlottedServer()), authorized=False, public_routes=["/home"]
+    )
+    assert authorize(auth, "/home") is None
+    assert authorize(auth, "/private") == LOGIN
