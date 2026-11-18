@@ -427,6 +427,11 @@ class OIDCAuth(Auth):
                         user["params"] = value1
                     return super().after_logged_in(user, idp, token)
 
+        The IdP ``token`` (including any ``refresh_token``) is not stored: the
+        session cookie is signed but not encrypted, so it is readable by the
+        client. An override that needs the refresh token must keep it
+        server-side (e.g. a store keyed by ``user["sub"]``).
+
         Returns:
             A redirect response to the app's base URL.
         """
@@ -434,9 +439,6 @@ class OIDCAuth(Auth):
             self.session["user"] = user
             self.session["idp"] = idp
             ensure_session_id(self.session)
-            oauth_scope = self.get_oauth_client(idp).client_kwargs["scope"]
-            if "offline_access" in oauth_scope:
-                self.session["refresh_token"] = token.get("refresh_token")
             if self.log_signins:
                 logging.info("User %s is logging in.", user.get("email"))
 
