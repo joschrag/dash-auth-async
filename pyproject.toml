@@ -54,6 +54,9 @@ Homepage = "https://github.com/joschrag/dash-auth-async"
 [tool.setuptools.packages.find]
 include = ["dash_auth_async*"]
 
+[tool.setuptools.package-data]
+dash_auth_async = ["py.typed"]
+
 [dependency-groups]
 dev = [
     "asgiref>=3.11.1",

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
+
 ## [1.4.1] - 2026-11-20
 
 ### Fixed
