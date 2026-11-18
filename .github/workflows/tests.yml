@@ -12,6 +12,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Locked compiled deps (pydantic-core, lxml, ...) may lack 3.15 wheels and
+    # build from source; don't block on 3.15 until Dependabot bumps them.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: astral-sh/setup-uv@v5
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -37,21 +42,23 @@ jobs:
         with:
           chrome-version: "stable"
 
-      # This now cleanly maps to the version of Dash being forced
+      # Pin every dependency except dash to uv.lock, so CI tests what the lock
+      # ships; dash itself floats within each matrix row's range.
       - name: Install
         run: |
-          pip install \
-            "${{ matrix.dash-constraint }}" \
-            -e "${{ matrix.extra-flags }}" \
-            pytest websocket-client
+          uv export --frozen --no-hashes --all-extras --group dev             --no-emit-project --no-emit-package dash -o constraints.txt
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             pytest websocket-client
 
       - name: Test
-        run: pytest --headless
+        run: uv run --no-sync pytest --headless
 
   coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -62,14 +69,10 @@ jobs:
           chrome-version: "stable"
 
       - name: Install
-        run: |
-          pip install \
-            "dash[testing,diskcache]>=4.2.0" \
-            -e ".[oidc,fastapi,quart,async]" \
-            pytest pytest-cov websocket-client
+        run: uv sync --frozen --group dev --all-extras
 
       - name: Test with coverage
-        run: pytest --headless --cov=dash_auth_async --cov-report=xml
+        run: uv run --no-sync pytest --headless --cov=dash_auth_async --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
