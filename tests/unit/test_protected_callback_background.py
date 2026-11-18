@@ -21,7 +21,8 @@ import pytest
 pytest.importorskip("diskcache", reason="dash[diskcache] is not installed")
 
 import diskcache
-from dash import Dash, DiskcacheManager, Input, Output, html
+from dash import ALL, Dash, DiskcacheManager, Input, Output, html
+from dash._utils import create_callback_id, stringify_id
 
 from dash_auth_async import BasicAuth, protected_callback
 
@@ -210,3 +211,55 @@ def test_pcb005_background_callback_refused_over_websocket(tmp_path):
     assert (
         auth.authorize_ws({"output": f"{out}.children", "inputs": []}, admin) is False
     )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_pcb006_denied_fallback_maps_wildcard_and_duplicate_outputs(backend, tmp_path):
+    """The trigger: a wildcard (``ALL``) output's spec is a list, and an
+    ``allow_duplicate`` output's property carries an ``@hash`` suffix. The old
+    serialiser indexed the list spec as a dict (500) and leaked the suffix."""
+    if backend != "flask":
+        pytest.importorskip(backend)
+    app = Dash(__name__, backend=backend)
+    BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
+    kind, btn, out = (f"{p}-{uuid.uuid4().hex}" for p in ("item", "btn", "out"))
+    app.layout = html.Div(
+        [html.Button(id=btn), html.Div(id=out)]
+        + [html.Div(id={"type": kind, "index": i}) for i in range(2)]
+    )
+    wild = Output({"type": kind, "index": ALL}, "children")
+    dup = Output(out, "children", allow_duplicate=True)
+
+    @protected_callback(
+        [wild, dup],
+        Input(btn, "n_clicks"),
+        groups=["admin"],
+        background=True,
+        manager=DiskcacheManager(diskcache.Cache(str(tmp_path))),
+        prevent_initial_call=True,
+        missing_permissions_output=[["d0", "d1"], "denied"],
+    )
+    def job(_n):
+        return [["r0", "r1"], "ran"]
+
+    body = {
+        "output": create_callback_id([wild, dup], [Input(btn, "n_clicks")], False),
+        "outputs": [
+            [
+                {"id": {"type": kind, "index": i}, "property": "children"}
+                for i in range(2)
+            ],
+            {"id": out, "property": dup.component_property},
+        ],
+        "inputs": [{"id": btn, "property": "n_clicks", "value": 1}],
+        "changedPropIds": [f"{btn}.n_clicks"],
+        "state": [],
+    }
+    start_status, start, _, _ = _run(backend, app, body, "guest")
+    assert start_status == 200
+    assert "cacheKey" not in start
+    assert start["response"] == {
+        stringify_id({"type": kind, "index": 0}): {"children": "d0"},
+        stringify_id({"type": kind, "index": 1}): {"children": "d1"},
+        out: {"children": "denied"},
+    }

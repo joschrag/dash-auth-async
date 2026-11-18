@@ -9,12 +9,18 @@ from typing import Any, Literal
 
 import dash
 from dash import get_app
-from dash._no_update import NoUpdate  # noqa: PLC2701 — Dash's no_update check
 
-# create_callback_id/stringify_id/to_json are the helpers Dash uses internally
-# to key its callback map and serialise responses; no public API equivalent.
-from dash._utils import create_callback_id, stringify_id, to_json  # noqa: PLC2701
-from dash.dependencies import handle_callback_args
+# The helpers Dash uses internally to key its callback map and serialise
+# responses; no public API equivalent.
+from dash._grouping import flatten_grouping  # noqa: PLC2701
+from dash._no_update import NoUpdate  # noqa: PLC2701 — Dash's no_update check
+from dash._utils import (  # noqa: PLC2701
+    clean_property_name,
+    create_callback_id,
+    stringify_id,
+    to_json,
+)
+from dash.dependencies import Output, handle_grouped_callback_args
 from dash.exceptions import PreventUpdate
 
 from .backends import detect_backend, get_active_backend
@@ -335,10 +341,12 @@ def _register_background_gate(callback_args, callback_kwargs, gate: Callable) ->
             itself is registered ungated -- silently skipping the gate (as
             ``public_callback`` may skip its whitelist) would leave it open.
     """
-    output, inputs, _state, _prevent = handle_callback_args(
+    output, inputs, _state, _indices, _prevent = handle_grouped_callback_args(
         callback_args, callback_kwargs
     )
-    callback_id = create_callback_id(output, inputs, no_output=not output)
+    # Same id Dash computes in register_callback, so dispatch lookups match.
+    flat_output = output if isinstance(output, Output) else flatten_grouping(output)
+    callback_id = create_callback_id(flat_output, inputs, no_output=not flat_output)
     try:
         app = get_app()
     except Exception as err:
@@ -348,7 +356,9 @@ def _register_background_gate(callback_args, callback_kwargs, gate: Callable) ->
         ) from err
     backend = detect_backend(app.server)
     gates = backend.read_config(app.server, BACKGROUND_GATES, {})
-    backend.store_config(app.server, BACKGROUND_GATES, {**gates, callback_id: gate})
+    backend.store_config(
+        app.server, BACKGROUND_GATES, {**gates, callback_id: (gate, output)}
+    )
 
 
 def has_background_gate(app, output: str | None) -> bool:
@@ -369,42 +379,61 @@ def background_gate_response(app, body: dict | None) -> Any:
 
     Returns:
         None to let the request proceed (start or poll the job), ``("", 204)``
-        when the fallback raised ``PreventUpdate``, or a Dash callback response
-        carrying the fallback output -- so a denied user never spawns a job.
+        when the fallback raised ``PreventUpdate`` or updates nothing, or a Dash
+        callback response carrying the fallback output -- so a denied user
+        never spawns a job.
     """
     if not body:  # _authorize already rejects bodiless callback requests
         return None
     backend = detect_backend(app.server)
-    gate = backend.read_config(app.server, BACKGROUND_GATES, {}).get(body.get("output"))
-    if gate is None:
+    entry = backend.read_config(app.server, BACKGROUND_GATES, {}).get(
+        body.get("output")
+    )
+    if entry is None:
         return None
+    gate, output = entry
     try:
         fallback = gate()
     except PreventUpdate:
         return "", 204
     if fallback is _PROCEED:
         return None
+    response = _callback_response(output, body.get("outputs"), fallback)
+    if not response:  # Dash answers an all-no_update result with 204 too
+        return "", 204
     return (
-        _callback_response(body.get("outputs"), fallback),
+        to_json({"multi": True, "response": response}),
         200,
         {"Content-Type": "application/json"},
     )
 
 
-def _callback_response(outputs, value) -> str:
-    """Serialise ``value`` as the body Dash returns for a finished callback.
+def _callback_response(output: Any, outputs: Any, value: Any) -> dict:
+    """Map ``value`` onto the request's output specs, as Dash's own dispatch does.
 
-    shortcut: wildcard (ALL/ALLSMALLER) outputs are not mapped; fall back to
-    PreventUpdate for those if a real app needs them.
+    Mirrors ``dash._callback._prepare_response``: a wildcard (``ALL``/
+    ``ALLSMALLER``) output's spec is a list, matched item-by-item against a list
+    value; ``prop@hash`` (``allow_duplicate``) is reduced to ``prop``.
 
     Returns:
-        The ``{"multi": true, "response": ...}`` JSON the renderer applies.
+        ``{component_id: {prop: value}}``; empty when nothing is updated.
     """
-    if isinstance(outputs, dict):
-        outputs, value = [outputs], [value]
+    if isinstance(output, Output):
+        value, outputs = [value], [outputs]
+    elif NoUpdate.is_no_update(value):
+        return {}
+    else:
+        value = flatten_grouping(
+            list(value) if isinstance(value, tuple) else value, output
+        )
     response: dict = {}
-    for spec, val in zip(outputs, value, strict=True):
+    for val, spec in zip(value, outputs, strict=True):
         if NoUpdate.is_no_update(val):
             continue
-        response.setdefault(stringify_id(spec["id"]), {})[spec["property"]] = val
-    return to_json({"multi": True, "response": response})
+        # A wildcard output's spec is a list, matched item-by-item to a list value.
+        vals, specs = (val, spec) if isinstance(spec, list) else ([val], [spec])
+        for vali, speci in zip(vals, specs, strict=True):
+            if not NoUpdate.is_no_update(vali):
+                prop = clean_property_name(speci["property"])
+                response.setdefault(stringify_id(speci["id"]), {})[prop] = vali
+    return response
