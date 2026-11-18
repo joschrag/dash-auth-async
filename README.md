@@ -194,6 +194,12 @@ def layout(user_id: str):
 
 ### OIDC Authentication
 
+OIDC needs authlib, shipped as the `oidc` extra:
+
+```bash
+pip install dash-auth-async[oidc]
+```
+
 To add authentication with OpenID Connect, you will first need to set up an OpenID Connect provider (IDP).
 This typically requires creating
 * An application in your IDP

@@ -909,7 +909,6 @@ name = "dash-auth-async"
 version = "1.4.1"
 source = { editable = "." }
 dependencies = [
-    { name = "authlib" },
     { name = "dash" },
     { name = "flask" },
     { name = "werkzeug" },
@@ -921,6 +920,9 @@ async = [
 ]
 fastapi = [
     { name = "dash", extra = ["fastapi"] },
+]
+oidc = [
+    { name = "authlib" },
 ]
 quart = [
     { name = "dash", extra = ["quart"] },
@@ -955,7 +957,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "authlib", specifier = ">=1.9.1" },
+    { name = "authlib", marker = "extra == 'oidc'", specifier = ">=1.9.1" },
     { name = "dash", specifier = ">=2" },
     { name = "dash", extras = ["async"], marker = "extra == 'async'", specifier = ">=3.1.0" },
     { name = "dash", extras = ["fastapi"], marker = "extra == 'fastapi'", specifier = ">=4.2.0" },
@@ -964,7 +966,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'quart'", specifier = ">=0.23.0" },
     { name = "werkzeug", specifier = ">=3.1.8" },
 ]
-provides-extras = ["fastapi", "quart", "async"]
+provides-extras = ["oidc", "fastapi", "quart", "async"]
 
 [package.metadata.requires-dev]
 dev = [

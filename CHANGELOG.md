@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+- `authlib` is now an optional dependency, installed with the `oidc` extra (`pip install dash-auth-async[oidc]`), matching upstream `dash-auth`. `BasicAuth`-only installs no longer pull in authlib and its crypto stack. **Upgrade note:** OIDC users must add the `oidc` extra
+
 ### Added
 - The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
 
