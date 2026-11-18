@@ -58,6 +58,7 @@ Note that Python 3.11 or greater is required.
 1. **OIDC users:** add the `oidc` extra — `pip install dash-auth-async[oidc]` (plus `quart`/`fastapi` if you use those backends). Without it, `OIDCAuth` raises an `ImportError` naming the extra.
 2. **Python 3.11+** and **Dash 3+** are now required.
 3. **`dash_auth_async.version` is gone.** Read the version from `dash_auth_async.__version__`.
+4. **OIDC refresh tokens are no longer stored in `session["refresh_token"]`** (the cookie is readable by the client). If you need one, capture it in an `after_logged_in` override and store it server-side — see the CHANGELOG for an example.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
