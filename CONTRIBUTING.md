@@ -12,7 +12,7 @@ To publish a new release:
 
 2. **Changelog and Version**
    - Add a new entry to `CHANGELOG.md` summarising the changes.
-   - Bump the version in `pyproject.toml` and `dash_auth_async/version.py`. Follow [Semantic Versioning 2.0.0](https://semver.org/).
+   - Bump the version with `uv version X.Y.Z` (updates `pyproject.toml`, the single source of truth). Follow [Semantic Versioning 2.0.0](https://semver.org/).
    - Create a PR, get it reviewed, and merge into `main`.
 
 3. **Push a Git Tag**

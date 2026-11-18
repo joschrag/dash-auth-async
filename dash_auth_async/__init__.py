@@ -1,10 +1,13 @@
 """Authentication and authorization for Dash apps on sync and async backends."""
 
+from importlib.metadata import version as _version
+
 from ._optional import OIDCAuth, get_oauth
 from .basic_auth import BasicAuth
 from .group_protection import check_groups, list_groups, protected, protected_callback
 from .public_routes import add_public_routes, public_callback
-from .version import __version__
+
+__version__ = _version("dash-auth-async")
 
 __all__ = [
     "BasicAuth",

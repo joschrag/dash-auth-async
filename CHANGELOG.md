@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
 
+### Removed
+- `dash_auth_async/version.py`. `dash_auth_async.__version__` is unchanged but now read from the installed package metadata, so it can no longer drift from `pyproject.toml`. Import it from `dash_auth_async`, not `dash_auth_async.version`
+
 ## [1.4.1] - 2026-11-20
 
 ### Fixed
