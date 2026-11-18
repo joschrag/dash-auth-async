@@ -1,20 +1,22 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "dash-auth-async"
 version = "1.4.1"
-description = "Dash Authorization Package."
+description = "Authentication and authorization for Dash apps on Flask, Quart and FastAPI, including async and WebSocket callbacks."
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
+    "Framework :: AsyncIO",
+    "Framework :: FastAPI",
     "Framework :: Flask",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
@@ -22,7 +24,6 @@ classifiers = [
     "Intended Audience :: Healthcare Industry",
     "Intended Audience :: Manufacturing",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -48,6 +49,8 @@ async = ["dash[async]>=3.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/joschrag/dash-auth-async"
+Changelog = "https://github.com/joschrag/dash-auth-async/blob/main/CHANGELOG.md"
+Issues = "https://github.com/joschrag/dash-auth-async/issues"
 "Original project" = "https://github.com/plotly/dash-auth"
 
 [tool.setuptools.packages.find]
