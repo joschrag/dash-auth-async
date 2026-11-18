@@ -51,6 +51,16 @@ uv run pytest -k ba001
 
 Note that Python 3.11 or greater is required.
 
+## Upgrading to 2.0
+
+2.0 changes how the package installs. Code using `BasicAuth`, `OIDCAuth` and the group helpers is unchanged.
+
+1. **OIDC users:** add the `oidc` extra — `pip install dash-auth-async[oidc]` (plus `quart`/`fastapi` if you use those backends). Without it, `OIDCAuth` raises an `ImportError` naming the extra.
+2. **Python 3.11+** and **Dash 3+** are now required.
+3. **`dash_auth_async.version` is gone.** Read the version from `dash_auth_async.__version__`.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
+
 ## Usage
 
 ### Basic Authentication
@@ -390,6 +400,12 @@ if __name__ == "__main__":
 
 ##### OIDCAuth with Quart
 
+OIDC on Quart needs both extras:
+
+```
+pip install dash-auth-async[oidc,quart]
+```
+
 ```python
 import os
 from dash import Dash, html
@@ -449,6 +465,12 @@ if __name__ == "__main__":
 ```
 
 ##### OIDCAuth with FastAPI
+
+OIDC on FastAPI needs both extras:
+
+```
+pip install dash-auth-async[oidc,fastapi]
+```
 
 ```python
 import os
