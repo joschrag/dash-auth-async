@@ -9,6 +9,7 @@ description = "Authentication and authorization for Dash apps on Flask, Quart an
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+keywords = ["dash", "plotly", "authentication", "authorization", "oidc", "flask", "quart", "fastapi", "asyncio", "websocket"]
 authors = [
     {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
 ]
@@ -16,6 +17,7 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
+    "Framework :: Dash",
     "Framework :: FastAPI",
     "Framework :: Flask",
     "Intended Audience :: Developers",
