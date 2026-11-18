@@ -7,7 +7,7 @@ name = "dash-auth-async"
 version = "1.4.1"
 description = "Dash Authorization Package."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
@@ -25,7 +25,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -97,10 +96,8 @@ constraint-dependencies = [
     "h2>=4.4.1",
     # GHSA-mpf4-983q-p7j4 and others: unbounded urlencoded/multipart
     # parsing DoS at and below 6.5.7, plus Dependabot alerts fixed in 6.6.
-    # tornado 6.6 needs Python 3.11+, so the 3.10 floor stays at 6.5.8.
     # Pulled in transitively via jupyter-client.
-    "tornado>=6.6; python_version >= '3.11'",
-    "tornado>=6.5.8",
+    "tornado>=6.6",
 ]
 override-dependencies = [
     "urllib3>=2.7.0",
@@ -115,7 +112,7 @@ sections = ["project.dependencies"]
 exclude-deps = []
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 preview = true

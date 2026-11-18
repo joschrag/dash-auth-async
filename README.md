@@ -49,7 +49,7 @@ uv sync
 uv run pytest -k ba001
 ```
 
-Note that Python 3.10 or greater is required.
+Note that Python 3.11 or greater is required.
 
 ## Usage
 
@@ -416,7 +416,7 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8050, debug=True)
 ```
 
-> **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.10.
+> **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.11.
 
 #### FastAPI (async) Backend
 
@@ -484,7 +484,7 @@ Notes:
   (Starlette forbids adding middleware after startup) — the normal usage pattern.
 - OIDC uses authlib's official `starlette_client`; no extra client module required.
 
-> The FastAPI backend requires Dash >= 4.2.0 and Python >= 3.10.
+> The FastAPI backend requires Dash >= 4.2.0 and Python >= 3.11.
 
 ### User-group-based permissions
 

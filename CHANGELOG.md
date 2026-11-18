@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Removed
 - `dash_auth_async/version.py`. `dash_auth_async.__version__` is unchanged but now read from the installed package metadata, so it can no longer drift from `pyproject.toml`. Import it from `dash_auth_async`, not `dash_auth_async.version`
+- Python 3.10 support (end of life since October 2026). `requires-python` is now `>=3.11`
+
+### Security
+- Dropping Python 3.10 closes the `tornado` and `filelock` advisories that 1.3.6 left open on 3.10; every install now resolves `tornado>=6.6`
 
 ## [1.4.1] - 2026-11-20
 
