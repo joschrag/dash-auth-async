@@ -227,7 +227,13 @@ class Auth(ABC):
 def _is_stream_transport(body: dict) -> bool:
     """Whether ``body`` is a Dash stream downlink poll or cancel, not a callback.
 
+    Mirrors how Dash dispatches them (``body.get(...) is not None``, checked
+    before any callback): a null value is not stream transport to Dash, so it
+    must not be to us either.
+
     Returns:
         True for ``streamDownlink``/``streamCancel`` bodies without an ``output``.
     """
-    return "output" not in body and ("streamDownlink" in body or "streamCancel" in body)
+    return "output" not in body and (
+        body.get("streamDownlink") is not None or body.get("streamCancel") is not None
+    )

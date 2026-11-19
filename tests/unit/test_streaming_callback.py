@@ -334,3 +334,24 @@ def test_st010_closing_the_stream_closes_the_user_generator():
     # this thread, which the stream would adopt as its dispatch user.
     result = contextvars.Context().run(asyncio.run, first_chunk_then_close())
     assert result == [True]
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"streamDownlink": None},
+        {"streamCancel": None},
+        {"streamDownlink": {"from": None}, "output": "OUT"},
+    ],
+    ids=["null-downlink", "null-cancel", "downlink-with-output"],
+)
+def test_st011_only_real_stream_transport_skips_auth(transport):
+    """A null downlink/cancel is not stream transport to Dash (it dispatches it as
+    a callback), and a body naming an output is a callback -- neither may skip auth."""
+    client, end_token, body = _anonymous_multiplex_app(
+        protected_callback, groups=["admin"]
+    )
+    if transport.get("output") == "OUT":
+        transport = {**body, **transport, "output": body["output"]}
+    resp = client.post(f"/_dash-update-component?endId={end_token}", json=transport)
+    assert resp.status_code == 401
