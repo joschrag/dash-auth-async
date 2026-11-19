@@ -185,10 +185,36 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
                 return evaluate(missing_permissions_output)
             return _PROCEED
 
-        # An async target must stay a coroutine function so Dash registers it on
-        # its async dispatch path (dash _callback.py branches on
-        # asyncio.iscoroutinefunction at registration). Wrapping it in a plain
-        # def would erase that and the coroutine would never be awaited.
+        # Every wrapper must keep the target's function kind: Dash picks the
+        # dispatch path at registration from iscoroutinefunction /
+        # isgeneratorfunction / isasyncgenfunction (dash _callback.py). A plain
+        # def wrapper erases it -- a coroutine is never awaited, a streaming
+        # generator is returned unconsumed.
+        if isinstance(output, Callable) and inspect.isasyncgenfunction(output):
+
+            @functools.wraps(output)
+            async def agen_wrap(*args, **kwargs):
+                fallback = gate()
+                if fallback is not _PROCEED:
+                    yield fallback
+                    return
+                async for chunk in output(*args, **kwargs):
+                    yield chunk
+
+            return agen_wrap
+
+        if isinstance(output, Callable) and inspect.isgeneratorfunction(output):
+
+            @functools.wraps(output)
+            def gwrap(*args, **kwargs):
+                fallback = gate()
+                if fallback is not _PROCEED:
+                    yield fallback
+                    return
+                yield from output(*args, **kwargs)
+
+            return gwrap
+
         if isinstance(output, Callable) and inspect.iscoroutinefunction(output):
 
             @functools.wraps(output)
@@ -313,10 +339,9 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
         else:
             wrapped_func = dash.callback(*callback_args, **callback_kwargs)(guard(func))
 
-        def wrap(*args, **kwargs):
-            return wrapped_func(*args, **kwargs)
-
-        return wrap
+        # Return Dash's result as-is: a plain forwarding def would erase the
+        # coroutine/generator kind of the user's function.
+        return wrapped_func
 
     return decorator
 
