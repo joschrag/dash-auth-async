@@ -202,3 +202,84 @@ def test_st006_stream_allowed_over_websocket():
     auth = BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     _register(protected_callback, btn, out, _agen, groups=["admin"])
     assert auth.authorize_ws({"output": f"{out}.children"}, {"groups": []}) is True
+
+
+def _anonymous_multiplex_app(decorator, **kwargs):
+    """A page served anonymously (public ``/``) with one streaming callback.
+
+    Returns:
+        ``(client, end_token, body)`` -- a Flask test client that has loaded the
+        page, the page's signed ``endId``, and the stream's uplink body.
+    """
+    import re
+
+    from dash import LocalSharedStorage
+
+    btn, out = _ids()
+    app = Dash(__name__, shared_storage=LocalSharedStorage())
+    BasicAuth(app, USERS, public_routes=["/"], secret_key="Test!")
+    app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
+    _register(decorator, btn, out, _agen, **kwargs)
+
+    client = app.server.test_client()
+    page = client.get("/")
+    assert page.status_code == 200
+    match = re.search(r'"end_id":\s*"([^"]+)"', page.get_data(as_text=True))
+    assert match is not None
+    end_token = match[1]
+    body = {
+        "output": f"{out}.children",
+        "outputs": {"id": out, "property": "children"},
+        "inputs": [{"id": btn, "property": "n_clicks", "value": 1}],
+        "changedPropIds": [f"{btn}.n_clicks"],
+        "state": [],
+        "streamConnection": {"requestId": "r1"},
+    }
+    return client, end_token, body
+
+
+def test_st007_anonymous_page_reads_public_stream_via_downlink():
+    """RED before fix: the downlink poll has no ``output``, so it got a 401."""
+    import time
+
+    client, end_token, body = _anonymous_multiplex_app(public_callback)
+    url = f"/_dash-update-component?endId={end_token}"
+
+    uplink = client.post(url, json=body)
+    assert uplink.status_code == 200
+    assert uplink.get_json() == {"multi": True, "stream": True}
+
+    received = ""
+    deadline = time.monotonic() + 10  # the pump runs on Dash's own loop thread
+    while "chunk-2" not in received and time.monotonic() < deadline:
+        downlink = client.post(url, json={"streamDownlink": {"from": None}})
+        assert downlink.status_code == 200
+        received += downlink.get_data(as_text=True)
+        time.sleep(0.05)
+    assert "chunk-1" in received
+    assert "chunk-2" in received
+
+    cancel = client.post(url, json={"streamCancel": {"requestId": "r1"}})
+    assert cancel.status_code == 200
+
+
+def test_st008_downlink_still_bound_to_signed_page_token():
+    """Passing the downlink through auth leaves Dash's per-page check in charge."""
+    client, _end_token, _body = _anonymous_multiplex_app(public_callback)
+
+    for body in (
+        {"streamDownlink": {"from": None}},
+        {"streamCancel": {"requestId": "x"}},
+    ):
+        assert client.post("/_dash-update-component", json=body).status_code == 403
+        forged = "/_dash-update-component?endId=forged"
+        assert client.post(forged, json=body).status_code == 403
+
+
+def test_st009_anonymous_uplink_to_protected_stream_still_denied():
+    """Only uplinks that pass auth publish to a page's downlink topic."""
+    client, end_token, body = _anonymous_multiplex_app(
+        protected_callback, groups=["admin"]
+    )
+    resp = client.post(f"/_dash-update-component?endId={end_token}", json=body)
+    assert resp.status_code == 401

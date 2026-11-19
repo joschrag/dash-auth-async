@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Support for Dash 4.5 streaming callbacks (`async def` callbacks that `yield`) in `protected_callback` and `public_callback`. Before, `protected_callback` wrapped the generator in a plain function, so Dash did not register it as a stream and the request failed with a `500`. Both decorators now also return a function of the same kind they were given (coroutine, async generator or generator), so stacked decorators and direct calls keep working
 - Group-protected streaming callbacks are checked when the request arrives, as background callbacks already were: Dash consumes an HTTP stream outside the request, where the session cannot be read. An allowed user receives every chunk; a denied user gets the fallback output and the stream never starts. Over the WebSocket the check runs inside the stream, where the authenticated user is available
 
+### Fixed
+- Anonymous visitors on a public page now see `public_callback` streams in the browser when the app uses shared storage. The browser reads stream frames through a separate downlink request to `_dash-update-component` that names no callback, so the auth check could not match it to a public callback and returned `401`. Downlink and cancel requests now pass the auth check; Dash still ties each one to the page's signed token and refuses any other with `403`, so a page can only read its own streams
+
 ### Changed
 - A `protected_callback` on an `async def` generator must now be registered after `Dash(...)` is created, as `background=True` callbacks already had to be; otherwise it raises `RuntimeError`
 

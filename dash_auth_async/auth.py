@@ -117,8 +117,12 @@ class Auth(ABC):
             if not body or not isinstance(body, dict):
                 return self.login_request()
 
-            # Check whether the callback is marked as public
-            if body.get("output") in public_callbacks:
+            # Public callbacks pass, and so do multiplexed stream downlink/cancel
+            # requests: they carry no output to check, Dash binds them to this
+            # page's signed endId (403 otherwise), and frames reach that topic
+            # only from uplinks that already passed this check -- so anonymous
+            # pages can read their public streams without exposing anyone else's.
+            if body.get("output") in public_callbacks or _is_stream_transport(body):
                 return None
 
             # A routing callback (one registered with a pathname input) is
@@ -218,3 +222,12 @@ class Auth(ABC):
     @abstractmethod
     def login_request(self):
         """Return the response that challenges an unauthenticated client."""
+
+
+def _is_stream_transport(body: dict) -> bool:
+    """Whether ``body`` is a Dash stream downlink poll or cancel, not a callback.
+
+    Returns:
+        True for ``streamDownlink``/``streamCancel`` bodies without an ``output``.
+    """
+    return "output" not in body and ("streamDownlink" in body or "streamCancel" in body)
