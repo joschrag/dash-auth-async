@@ -1,9 +1,11 @@
 """Group-based protection for Dash callbacks and outputs."""
 
+import contextlib
 import functools
 import inspect
 import logging
 import re
+import threading
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -21,7 +23,7 @@ from dash._utils import (  # noqa: PLC2701
     to_json,
 )
 from dash.dependencies import Output, handle_grouped_callback_args
-from dash.exceptions import PreventUpdate
+from dash.exceptions import MissingCallbackContextException, PreventUpdate
 
 from .backends import detect_backend, get_active_backend
 from .websocket_auth import _WS_AUTH_USER
@@ -191,15 +193,24 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
         # def wrapper erases it -- a coroutine is never awaited, a streaming
         # generator is returned unconsumed.
         if isinstance(output, Callable) and inspect.isasyncgenfunction(output):
+            # A stream's body runs where no session is readable (Flask drives it
+            # on a private loop thread), so gate it with the user captured at
+            # dispatch. A denied user's fallback then travels as a normal
+            # stream frame -- the only thing a multiplexed renderer reads.
+            _install_user_capture_hook()
 
             @functools.wraps(output)
             async def agen_wrap(*args, **kwargs):
+                _adopt_dispatch_user()
                 fallback = gate()
                 if fallback is not _PROCEED:
                     yield fallback
                     return
-                async for chunk in output(*args, **kwargs):
-                    yield chunk
+                # aclosing: when Dash closes this stream (cancel/disconnect),
+                # close the user's generator now so its cleanup runs promptly.
+                async with contextlib.aclosing(output(*args, **kwargs)) as chunks:
+                    async for chunk in chunks:
+                        yield chunk
 
             return agen_wrap
 
@@ -336,13 +347,6 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
             # a failure leaves no ungated callback behind.
             _register_dispatch_gate(callback_args, callback_kwargs, guard(_proceed))
             target = func
-        elif inspect.isasyncgenfunction(func):
-            # A stream's body runs where no session is readable (Flask drives it
-            # on a private loop thread); gate it with the user captured at
-            # dispatch, so a denied user's fallback travels as a normal stream
-            # frame -- the only thing a multiplexed renderer reads.
-            _install_user_capture_hook()
-            target = _gate_with_dispatch_user(guard(func))
         else:
             target = guard(func)
         wrapped_func = dash.callback(*callback_args, **callback_kwargs)(target)
@@ -367,53 +371,56 @@ def _proceed() -> object:
 
 
 _USER_NAMESPACE = "dash_auth_async_user"
+_user_capture_lock = threading.Lock()
 _user_capture_installed = False
+logger = logging.getLogger(__name__)
 
 
 def _capture_user(_ctx) -> dict | None:
     """``custom_data`` hook: the caller, resolved while dispatch has context.
 
     Returns:
-        The authenticated user, or None (also when no ``Auth`` is configured:
-        the hook is process-global and runs for every app's callbacks).
+        The authenticated user, or None. Errors deny (fail closed) but are
+        logged, so a broken hook does not just look like "everyone is denied".
+        Apps without an ``Auth`` land here too: the hook is process-global.
     """
     try:
         return _current_user()
     except Exception:  # pylint: disable=broad-exception-caught
+        logger.debug("Could not resolve the caller for a callback.", exc_info=True)
         return None
 
 
 def _install_user_capture_hook() -> None:
     """Register ``_capture_user`` once per process (Dash hooks are global)."""
     global _user_capture_installed  # noqa: PLW0603 — once-per-process guard
-    if _user_capture_installed:
+    hooks = getattr(dash, "hooks", None)
+    if hooks is None:  # dash<3: no hooks, and no streaming callbacks either
         return
-    dash.hooks.custom_data(_USER_NAMESPACE)(_capture_user)
-    _user_capture_installed = True
+    with _user_capture_lock:
+        if not _user_capture_installed:
+            hooks.custom_data(_USER_NAMESPACE)(_capture_user)
+            _user_capture_installed = True
 
 
-def _gate_with_dispatch_user(guarded: Callable) -> Callable:
-    """Run a guarded stream with the user captured at dispatch.
+def _adopt_dispatch_user() -> None:
+    """Make the user captured at dispatch the caller for this stream.
 
     Dash runs ``custom_data`` hooks while it still has the request (or WS)
-    context and exposes the result on ``dash.ctx`` in every stream step. Setting
-    it as the off-request user lets ``_current_user()`` -- and so the gate --
-    see it wherever the stream is consumed.
-
-    Returns:
-        An async generator function (Dash detects streams by that kind).
+    context and restores ``dash.ctx`` around every stream step. Setting the
+    captured user as the off-request user lets ``_current_user()`` see it
+    wherever the stream is consumed. Outside a Dash dispatch (no ctx, or the
+    hook did not run) this changes nothing.
     """
-
-    @functools.wraps(guarded)
-    async def stream(*args, **kwargs):
-        user = dash.callback_context.custom_data.get(_USER_NAMESPACE)
-        # No reset: each stream step runs in its own (copied or per-task)
-        # context, so the value cannot outlive this dispatch.
-        _WS_AUTH_USER.set(user)
-        async for chunk in guarded(*args, **kwargs):
-            yield chunk
-
-    return stream
+    try:
+        custom_data = dash.callback_context.custom_data
+    # No ctx yet (LookupError), ctx outside a callback, or dash<3 (AttributeError).
+    except (LookupError, MissingCallbackContextException, AttributeError):
+        return
+    if _USER_NAMESPACE in custom_data:
+        # No reset needed: the value lives in the context of the task (or
+        # copied step context) driving this one stream, which ends with it.
+        _WS_AUTH_USER.set(custom_data[_USER_NAMESPACE])
 
 
 def _register_dispatch_gate(callback_args, callback_kwargs, gate: Callable) -> None:

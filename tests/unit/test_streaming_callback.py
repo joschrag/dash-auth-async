@@ -17,7 +17,7 @@ from dash import Dash, Input, Output, html
 from dash._callback import GLOBAL_CALLBACK_MAP
 from packaging.version import Version
 
-from dash_auth_async import BasicAuth, protected_callback, public_callback
+from dash_auth_async import BasicAuth, protected, protected_callback, public_callback
 
 pytestmark = [
     pytest.mark.skipif(
@@ -93,8 +93,11 @@ def _headers(user):
     return {"Authorization": f"Basic {token}"}
 
 
-def _post_stream(user):
+def _post_stream(user, *, direct=False):
     """POST one stream request on Flask to a group-protected streaming callback.
+
+    ``direct`` stacks ``dash.callback`` on ``protected()`` instead of using
+    ``protected_callback``.
 
     Returns:
         ``(response, output_id)``.
@@ -105,14 +108,20 @@ def _post_stream(user):
     app = Dash(__name__, shared_storage=LocalSharedStorage())
     BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
-    _register(
-        protected_callback,
-        btn,
-        out,
-        _agen,
-        groups=["admin"],
-        missing_permissions_output="forbidden",
-    )
+    if direct:
+        gated = protected(
+            "login", groups=["admin"], missing_permissions_output="forbidden"
+        )(_agen)
+        _register(dash.callback, btn, out, gated)
+    else:
+        _register(
+            protected_callback,
+            btn,
+            out,
+            _agen,
+            groups=["admin"],
+            missing_permissions_output="forbidden",
+        )
 
     client = app.server.test_client()
     client.get("/", headers=_headers(user))  # runs Dash's _setup_server
@@ -130,10 +139,14 @@ def _post_stream(user):
     return resp, out
 
 
-def test_st003_authorised_user_receives_every_chunk_over_http():
+@pytest.mark.parametrize(
+    "direct", [False, True], ids=["protected_callback", "protected"]
+)
+def test_st003_authorised_user_receives_every_chunk_over_http(direct):
     """RED before fix: Flask consumes the stream off-request, so the in-generator
-    gate saw no user and denied even admins."""
-    resp, out = _post_stream("admin")
+    gate saw no user and denied even admins. ``protected`` used directly (under a
+    plain ``dash.callback``) needs the same dispatch-time user capture."""
+    resp, out = _post_stream("admin", direct=direct)
 
     assert resp.status_code == 200
     assert resp.mimetype == "application/x-ndjson"
@@ -289,3 +302,35 @@ def test_st009_anonymous_uplink_to_protected_stream_still_denied():
     )
     resp = client.post(f"/_dash-update-component?endId={end_token}", json=body)
     assert resp.status_code == 401
+
+
+def test_st010_closing_the_stream_closes_the_user_generator():
+    """Dash closes a cancelled/disconnected stream; the user's own generator must
+    close with it (its cleanup runs now, not whenever the GC gets to it)."""
+    import asyncio
+    import contextvars
+
+    cleaned_up = []
+
+    async def agen(_n):
+        try:
+            yield "chunk-1"
+            yield "chunk-2"
+        finally:
+            cleaned_up.append(True)
+
+    stream = protected("login", groups=["admin"])(agen)
+
+    async def first_chunk_then_close():
+        from dash_auth_async.websocket_auth import _WS_AUTH_USER
+
+        _WS_AUTH_USER.set({"groups": ["admin"]})
+        gen = stream(1)
+        assert await anext(gen) == "chunk-1"
+        await gen.aclose()
+        return list(cleaned_up)
+
+    # Empty context: earlier Flask test-client dispatches leave a Dash ctx set on
+    # this thread, which the stream would adopt as its dispatch user.
+    result = contextvars.Context().run(asyncio.run, first_chunk_then_close())
+    assert result == [True]
