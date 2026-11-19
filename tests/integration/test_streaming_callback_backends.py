@@ -37,6 +37,16 @@ PATH = "/_dash-update-component"
 TIMEOUT = 15
 
 
+def _fresh_storage(storage_cls):
+    """A shared storage with its own owner election.
+
+    Every default ``LocalSharedStorage`` in a process shares one owner address
+    (a socket file on POSIX). Here that owner belongs to whichever test's app
+    started first; once that test's server stops, later tests time out on it.
+    """
+    return storage_cls(namespace=uuid.uuid4().hex)
+
+
 def _headers(user):
     if user is None:
         return {}
@@ -61,7 +71,9 @@ def _serve(dash_thread_server, backend, decorator, **kwargs):
         pytest.importorskip(backend)
     tag = uuid.uuid4().hex
     btn, out = f"btn-{tag}", f"out-{tag}"
-    app = Dash(__name__, backend=backend, shared_storage=LocalSharedStorage())
+    app = Dash(
+        __name__, backend=backend, shared_storage=_fresh_storage(LocalSharedStorage)
+    )
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     decorator(
         Output(out, "children"),

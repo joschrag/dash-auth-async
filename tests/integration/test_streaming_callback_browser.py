@@ -29,6 +29,16 @@ BACKENDS = ["flask", "quart", "fastapi"]
 USERS = {"admin": "admin", "guest": "guest"}
 
 
+def _fresh_storage(storage_cls):
+    """A shared storage with its own owner election.
+
+    Every default ``LocalSharedStorage`` in a process shares one owner address
+    (a socket file on POSIX). Here that owner belongs to whichever test's app
+    started first; once that test's server stops, later tests time out on it.
+    """
+    return storage_cls(namespace=uuid.uuid4().hex)
+
+
 def _serve(dash_thread_server, backend, decorator, *, public_page=False, **kwargs):
     """Serve a page whose streaming callback fires on load.
 
@@ -40,7 +50,9 @@ def _serve(dash_thread_server, backend, decorator, *, public_page=False, **kwarg
     if backend != "flask":
         pytest.importorskip(backend)
     out = f"out-{uuid.uuid4().hex}"
-    app = Dash(__name__, backend=backend, shared_storage=LocalSharedStorage())
+    app = Dash(
+        __name__, backend=backend, shared_storage=_fresh_storage(LocalSharedStorage)
+    )
     app.layout = html.Div([html.Button(id=f"{out}-btn"), html.Div(id=out)])
 
     @decorator(Output(out, "children"), Input(f"{out}-btn", "n_clicks"), **kwargs)

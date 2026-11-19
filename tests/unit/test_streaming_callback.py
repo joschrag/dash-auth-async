@@ -45,6 +45,16 @@ def streams_not_shut_down():
     _shutdown.clear()
 
 
+def _fresh_storage(storage_cls):
+    """A shared storage with its own owner election.
+
+    Every default ``LocalSharedStorage`` in a process shares one owner address
+    (a socket file on POSIX). Here that owner belongs to whichever test's app
+    started first; once that test's server stops, later tests time out on it.
+    """
+    return storage_cls(namespace=uuid.uuid4().hex)
+
+
 def _ids():
     # Unique ids: callbacks register into Dash's process-global map.
     tag = uuid.uuid4().hex
@@ -105,7 +115,7 @@ def _post_stream(user, *, direct=False):
     from dash import LocalSharedStorage  # dash>=4.5 only; module must import on older
 
     btn, out = _ids()
-    app = Dash(__name__, shared_storage=LocalSharedStorage())
+    app = Dash(__name__, shared_storage=_fresh_storage(LocalSharedStorage))
     BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     if direct:
@@ -235,7 +245,7 @@ def _anonymous_multiplex_app(decorator, **kwargs):
     from dash import LocalSharedStorage
 
     btn, out = _ids()
-    app = Dash(__name__, shared_storage=LocalSharedStorage())
+    app = Dash(__name__, shared_storage=_fresh_storage(LocalSharedStorage))
     BasicAuth(app, USERS, public_routes=["/"], secret_key="Test!")
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     _register(decorator, btn, out, _agen, **kwargs)
