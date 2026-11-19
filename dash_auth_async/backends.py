@@ -830,17 +830,15 @@ class FastAPIBackend(Backend):
                         raw = await request.body()
                         body_replayed = False
 
-                        # Must be a coroutine to satisfy the ASGI `receive`
-                        # interface, even though this replay never awaits.
-                        async def downstream_receive():  # noqa: RUF029
+                        async def downstream_receive():
                             nonlocal body_replayed
                             if body_replayed:
-                                # Body already delivered; further reads see a
-                                # disconnect, per the ASGI contract — not the
-                                # same body event replayed forever (which would
-                                # spin an app that polls receive() to detect
-                                # client disconnect).
-                                return {"type": "http.disconnect"}
+                                # Body already delivered (and drained from the
+                                # real stream), so the real receive() now blocks
+                                # until the client actually disconnects. Faking
+                                # a disconnect here made StreamingResponse's
+                                # disconnect listener cancel every stream.
+                                return await receive()
                             body_replayed = True
                             return {
                                 "type": "http.request",

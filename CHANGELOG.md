@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Fixed
 - Anonymous visitors on a public page now see `public_callback` streams in the browser when the app uses shared storage. The browser reads stream frames through a separate downlink request to `_dash-update-component` that names no callback, so the auth check could not match it to a public callback and returned `401`. Downlink and cancel requests now pass the auth check; Dash still ties each one to the page's signed token and refuses any other with `403`, so a page can only read its own streams
+- FastAPI: streaming responses are no longer cut off (`incomplete chunked read`) as soon as they start. After passing the request body on, the auth middleware told the app the client had disconnected, so Starlette's `StreamingResponse` cancelled every stream, public or protected. The middleware now reports a disconnect only when the client actually disconnects
 
 ### Changed
 - A `protected_callback` on an `async def` generator must now be registered after `Dash(...)` is created, as `background=True` callbacks already had to be; otherwise it raises `RuntimeError`
