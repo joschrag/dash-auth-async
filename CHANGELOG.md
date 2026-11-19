@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-19
+
+### Added
+- Support for Dash 4.5 streaming callbacks (`async def` callbacks that `yield`) in `protected_callback` and `public_callback`. Before, `protected_callback` wrapped the generator in a plain function, so Dash did not register it as a stream and the request failed with a `500`. Both decorators now also return a function of the same kind they were given (coroutine, async generator or generator), so stacked decorators and direct calls keep working
+- Group-protected streaming callbacks are checked when the request arrives, as background callbacks already were: Dash consumes an HTTP stream outside the request, where the session cannot be read. An allowed user receives every chunk; a denied user gets the fallback output and the stream never starts. Over the WebSocket the check runs inside the stream, where the authenticated user is available
+
+### Changed
+- A `protected_callback` on an `async def` generator must now be registered after `Dash(...)` is created, as `background=True` callbacks already had to be; otherwise it raises `RuntimeError`
+
 ## [1.3.8] - 2026-11-18
 
 ### Fixed

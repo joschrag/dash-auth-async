@@ -13,7 +13,7 @@ from .backends import (
     register_backend,
     set_active_backend,
 )
-from .group_protection import background_gate_response, has_background_gate
+from .group_protection import dispatch_gate_response, refuses_ws
 from .public_routes import (
     add_public_routes,
     get_public_callbacks,
@@ -130,9 +130,9 @@ class Auth(ABC):
         # matches a public route, or whether the request is authorised
         if public_routes.test(path) or self.is_authorized():
             if path == self._callback_path():
-                # Group-protected background callbacks are gated here, not in
-                # their job process (which has no session to read).
-                return background_gate_response(self.app, body)
+                # Group-protected background and streaming callbacks are gated
+                # here: their bodies run where no session is readable.
+                return dispatch_gate_response(self.app, body)
             return None
 
         # Otherwise, ask the user to log in
@@ -165,7 +165,7 @@ class Auth(ABC):
         # (its gate runs in _authorize, over HTTP). The renderer never sends
         # background callbacks over the socket, so refuse them here rather
         # than let a crafted message run the job without the group check.
-        if has_background_gate(self.app, payload.get("output")):
+        if refuses_ws(self.app, payload.get("output")):
             return False
 
         return user is not None

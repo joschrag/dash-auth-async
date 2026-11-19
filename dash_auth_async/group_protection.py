@@ -328,16 +328,27 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
             groups_str_split=groups_str_split,
             check_type=check_type,
         )
+        # Callbacks whose body runs where no session is readable are gated at
+        # HTTP dispatch instead (Auth._authorize) and registered unwrapped.
+        # Registered first so a failure leaves no ungated callback behind.
         if callback_kwargs.get("background"):
-            # A background job runs in another process with no session, so the
-            # gate can't run inside it (it would always deny). Gate at HTTP
-            # dispatch instead -- Auth._authorize, on the start request and
-            # every poll -- and register the job unwrapped. Registered first so
-            # a failure leaves no ungated callback behind.
-            _register_background_gate(callback_args, callback_kwargs, guard(_proceed))
-            wrapped_func = dash.callback(*callback_args, **callback_kwargs)(func)
+            # The job runs in another process; the renderer never sends
+            # background callbacks over the socket, so WS is refused outright.
+            _register_dispatch_gate(
+                callback_args, callback_kwargs, guard(_proceed), allow_ws=False
+            )
+            target = func
+        elif inspect.isasyncgenfunction(func):
+            # A streamed body runs off-request (Flask drives it on a private
+            # loop thread). Over WS the hook's user does reach it, so the
+            # in-generator gate stays for that path.
+            _register_dispatch_gate(
+                callback_args, callback_kwargs, guard(_proceed), allow_ws=True
+            )
+            target = _gate_stream_on_ws(func, guard(func))
         else:
-            wrapped_func = dash.callback(*callback_args, **callback_kwargs)(guard(func))
+            target = guard(func)
+        wrapped_func = dash.callback(*callback_args, **callback_kwargs)(target)
 
         # Return Dash's result as-is: a plain forwarding def would erase the
         # coroutine/generator kind of the user's function.
@@ -346,7 +357,7 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
     return decorator
 
 
-BACKGROUND_GATES = "PROTECTED_BACKGROUND_CALLBACKS"
+DISPATCH_GATES = "PROTECTED_DISPATCH_GATED_CALLBACKS"
 
 
 def _proceed() -> object:
@@ -358,12 +369,37 @@ def _proceed() -> object:
     return _PROCEED
 
 
-def _register_background_gate(callback_args, callback_kwargs, gate: Callable) -> None:
-    """Record ``gate`` for a background callback, keyed like ``public_callback``.
+def _gate_stream_on_ws(func: Callable, guarded: Callable) -> Callable:
+    """Wrap a streaming callback so its in-generator gate runs only over WS.
+
+    HTTP requests were already gated in ``Auth._authorize``; there the body runs
+    off-request, where the gate would see no user and always deny.
+
+    Returns:
+        An async generator function (Dash detects streams by that kind).
+    """
+
+    @functools.wraps(func)
+    async def stream(*args, **kwargs):
+        # dash.ctx.websocket is set only by Dash's WS dispatch.
+        source = guarded if dash.callback_context.websocket is not None else func
+        async for chunk in source(*args, **kwargs):
+            yield chunk
+
+    return stream
+
+
+def _register_dispatch_gate(
+    callback_args, callback_kwargs, gate: Callable, *, allow_ws: bool
+) -> None:
+    """Record ``gate`` to run at HTTP dispatch, keyed like ``public_callback``.
+
+    :param allow_ws: whether ``Auth.authorize_ws`` may let the callback run over
+        a WebSocket (it must then be gated there by other means).
 
     Raises:
-        RuntimeError: when no Dash app exists yet. Fails loudly because the job
-            itself is registered ungated -- silently skipping the gate (as
+        RuntimeError: when no Dash app exists yet. Fails loudly because the
+            callback itself is registered ungated -- silently skipping the gate (as
             ``public_callback`` may skip its whitelist) would leave it open.
     """
     output, inputs, _state, _indices, _prevent = handle_grouped_callback_args(
@@ -376,34 +412,38 @@ def _register_background_gate(callback_args, callback_kwargs, gate: Callable) ->
         app = get_app()
     except Exception as err:
         raise RuntimeError(
-            "protected_callback(background=True) must be registered after the "
-            "Dash app is created: the group check runs at request dispatch."
+            "Background and streaming protected_callbacks must be registered "
+            "after the Dash app is created: the group check runs at request "
+            "dispatch."
         ) from err
     backend = detect_backend(app.server)
-    gates = backend.read_config(app.server, BACKGROUND_GATES, {})
+    gates = backend.read_config(app.server, DISPATCH_GATES, {})
     backend.store_config(
-        app.server, BACKGROUND_GATES, {**gates, callback_id: (gate, output)}
+        app.server, DISPATCH_GATES, {**gates, callback_id: (gate, output, allow_ws)}
     )
 
 
-def has_background_gate(app, output: str | None) -> bool:
-    """Whether ``output`` is a group-protected background callback.
+def refuses_ws(app, output: str | None) -> bool:
+    """Whether ``output`` is dispatch-gated and must not run over a WebSocket.
 
     Returns:
-        True when a dispatch-time gate is registered for that callback id.
+        True for group-protected background callbacks, whose gate runs only in
+        ``Auth._authorize`` (over HTTP).
     """
     backend = detect_backend(app.server)
-    return output in backend.read_config(app.server, BACKGROUND_GATES, {})
+    entry = backend.read_config(app.server, DISPATCH_GATES, {}).get(output)
+    return entry is not None and not entry[2]
 
 
-def background_gate_response(app, body: dict | None) -> Any:
-    """Run a background callback's group gate for an authorised request.
+def dispatch_gate_response(app, body: dict | None) -> Any:
+    """Run a dispatch-gated callback's group gate for an authorised request.
 
     Called from ``Auth._authorize`` under the request context, where
-    ``_current_user()`` can read the session -- unlike the job process.
+    ``_current_user()`` can read the session -- unlike a background job process
+    or the off-request loop a stream is consumed on.
 
     Returns:
-        None to let the request proceed (start or poll the job), ``("", 204)``
+        None to let the request proceed (start/poll a job, run a stream), ``("", 204)``
         when the fallback raised ``PreventUpdate`` or updates nothing, or a Dash
         callback response carrying the fallback output -- so a denied user
         never spawns a job.
@@ -411,12 +451,10 @@ def background_gate_response(app, body: dict | None) -> Any:
     if not body:  # _authorize already rejects bodiless callback requests
         return None
     backend = detect_backend(app.server)
-    entry = backend.read_config(app.server, BACKGROUND_GATES, {}).get(
-        body.get("output")
-    )
+    entry = backend.read_config(app.server, DISPATCH_GATES, {}).get(body.get("output"))
     if entry is None:
         return None
-    gate, output = entry
+    gate, output, _allow_ws = entry
     try:
         fallback = gate()
     except PreventUpdate:
