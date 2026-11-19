@@ -302,3 +302,29 @@ def test_gp017_callback_decorators_return_target_kind(decorator, target):
 
     for kind_check in _KIND_CHECKS:
         assert kind_check(decorated) == kind_check(target)
+
+
+def test_gp018_capture_user_fails_closed_and_logs(monkeypatch, caplog):
+    """A broken user lookup must deny (None), but visibly: a silent None would
+    look like "every user is denied" with nothing in the logs."""
+    from dash_auth_async import group_protection
+
+    def boom():
+        raise RuntimeError("no session")
+
+    monkeypatch.setattr(group_protection, "_current_user", boom)
+    with caplog.at_level("DEBUG", logger=group_protection.__name__):
+        assert group_protection._capture_user(None) is None
+    assert "Could not resolve the caller" in caplog.text
+
+
+def test_gp019_user_capture_hook_skipped_without_dash_hooks(monkeypatch):
+    """Dash below 3 has no hooks (and no streams): installing must not crash."""
+    import dash
+
+    from dash_auth_async import group_protection
+
+    monkeypatch.delattr(dash, "hooks", raising=False)
+    monkeypatch.setattr(group_protection, "_user_capture_installed", False)
+    group_protection._install_user_capture_hook()
+    assert group_protection._user_capture_installed is False
