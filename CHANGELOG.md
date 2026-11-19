@@ -8,14 +8,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Added
 - Support for Dash 4.5 streaming callbacks (`async def` callbacks that `yield`) in `protected_callback` and `public_callback`. Before, `protected_callback` wrapped the generator in a plain function, so Dash did not register it as a stream and the request failed with a `500`. Both decorators now also return a function of the same kind they were given (coroutine, async generator or generator), so stacked decorators and direct calls keep working
-- Group-protected streaming callbacks are checked when the request arrives, as background callbacks already were: Dash consumes an HTTP stream outside the request, where the session cannot be read. An allowed user receives every chunk; a denied user gets the fallback output and the stream never starts. Over the WebSocket the check runs inside the stream, where the authenticated user is available
+- Group-protected streaming callbacks check the user who made the request, on every transport (inline HTTP, the shared-storage downlink, and the WebSocket). Dash consumes a stream outside the request, where the session cannot be read, so the user is captured while Dash dispatches the callback (a `custom_data` hook) and the group check runs with it when the stream starts. An allowed user receives every chunk; a denied user gets the fallback output as a stream frame, which is the only thing the browser reads on the shared-storage path
 
 ### Fixed
 - Anonymous visitors on a public page now see `public_callback` streams in the browser when the app uses shared storage. The browser reads stream frames through a separate downlink request to `_dash-update-component` that names no callback, so the auth check could not match it to a public callback and returned `401`. Downlink and cancel requests now pass the auth check; Dash still ties each one to the page's signed token and refuses any other with `403`, so a page can only read its own streams
 - FastAPI: streaming responses are no longer cut off (`incomplete chunked read`) as soon as they start. After passing the request body on, the auth middleware told the app the client had disconnected, so Starlette's `StreamingResponse` cancelled every stream, public or protected. The middleware now reports a disconnect only when the client actually disconnects
-
-### Changed
-- A `protected_callback` on an `async def` generator must now be registered after `Dash(...)` is created, as `background=True` callbacks already had to be; otherwise it raises `RuntimeError`
 
 ## [1.3.8] - 2026-11-18
 

@@ -147,33 +147,38 @@ def test_st003_authorised_user_receives_every_chunk_over_http():
     ]
 
 
-def test_st004_denied_user_gets_fallback_without_starting_stream():
-    """Gated at dispatch: a denied user gets a plain callback response, no stream."""
+def test_st004_denied_user_gets_fallback_as_stream_frame():
+    """The fallback must travel as a stream frame: a multiplexed renderer ignores
+    the uplink's body and only reads frames, so a plain JSON reply never shows."""
     resp, out = _post_stream("guest")
 
     assert resp.status_code == 200
-    assert resp.mimetype == "application/json"
-    assert resp.get_json() == {
-        "multi": True,
-        "response": {out: {"children": "forbidden"}},
-    }
+    assert resp.mimetype == "application/x-ndjson"
+    frames = [
+        json.loads(line) for line in resp.get_data(as_text=True).splitlines() if line
+    ]
+    assert frames == [
+        {"multi": True, "response": {out: {"children": "forbidden"}}},
+        {"done": True},
+    ]
 
 
 @pytest.mark.parametrize(
-    ("ws_user", "expected"),
+    ("dispatch_user", "expected"),
     [
         ({"groups": ["admin"]}, ["chunk-1", "chunk-2"]),
         ({"groups": ["guest"]}, ["forbidden"]),
     ],
 )
-def test_st005_stream_gated_in_generator_over_websocket(ws_user, expected):
-    """Over WS the hook's user reaches the stream task, so the gate runs there."""
+def test_st005_stream_gated_with_user_captured_at_dispatch(dispatch_user, expected):
+    """The gate reads the user Dash's custom_data hook captured at dispatch, not
+    the (absent) request context of wherever the stream is consumed."""
     import asyncio
 
     from dash._callback_context import context_value
     from dash._utils import AttributeDict
 
-    from dash_auth_async.websocket_auth import _WS_AUTH_USER
+    from dash_auth_async.group_protection import _USER_NAMESPACE
 
     btn, out = _ids()
     app = Dash(__name__)
@@ -187,16 +192,17 @@ def test_st005_stream_gated_in_generator_over_websocket(ws_user, expected):
     )(_agen)
 
     async def drain():
-        # What Dash's WS dispatch sets up around each stream step.
-        context_value.set(AttributeDict(dash_websocket=object()))
-        _WS_AUTH_USER.set(ws_user)
+        # What Dash sets around each stream step: ctx with custom_data from
+        # the hooks it ran at dispatch -- and no request context.
+        captured = AttributeDict({_USER_NAMESPACE: dispatch_user})
+        context_value.set(AttributeDict(custom_data=captured))
         return [chunk async for chunk in stream(1)]
 
     assert asyncio.run(drain()) == expected
 
 
 def test_st006_stream_allowed_over_websocket():
-    """Unlike background callbacks, streams may run over WS (gated in-generator)."""
+    """Unlike background callbacks, streams may run over WS (gated in-stream)."""
     btn, out = _ids()
     app = Dash(__name__)
     auth = BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")

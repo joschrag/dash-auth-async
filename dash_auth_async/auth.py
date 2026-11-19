@@ -134,8 +134,8 @@ class Auth(ABC):
         # matches a public route, or whether the request is authorised
         if public_routes.test(path) or self.is_authorized():
             if path == self._callback_path():
-                # Group-protected background and streaming callbacks are gated
-                # here: their bodies run where no session is readable.
+                # Group-protected background callbacks are gated here, not in
+                # their job process (which has no session to read).
                 return dispatch_gate_response(self.app, body)
             return None
 

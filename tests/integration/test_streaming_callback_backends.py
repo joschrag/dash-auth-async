@@ -115,7 +115,7 @@ def test_sb001_authorised_user_streams_every_chunk(dash_thread_server, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_sb002_denied_user_gets_fallback_without_stream(dash_thread_server, backend):
+def test_sb002_denied_user_gets_fallback_as_stream_frame(dash_thread_server, backend):
     base, out, body = _serve(
         dash_thread_server,
         backend,
@@ -127,7 +127,9 @@ def test_sb002_denied_user_gets_fallback_without_stream(dash_thread_server, back
         base + PATH, json=body, headers=_headers("guest"), timeout=TIMEOUT
     )
     assert resp.status_code == 200
-    assert resp.json() == {"multi": True, "response": {out: {"children": "forbidden"}}}
+    frames = [json.loads(line) for line in resp.text.splitlines() if line.strip()]
+    assert _children(frames, out) == ["forbidden"]
+    assert frames[-1] == {"done": True}
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
