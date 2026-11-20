@@ -197,27 +197,215 @@ def test_oauth_create_client_without_app_raises():
         oauth.create_client("idp")
 
 
-def test_state_data_without_session_is_cached_but_not_trusted():
-    class _Cache:
-        def __init__(self):
-            self.data = {}
+# --------------------------------------------------------------------------- #
+# Successful token exchange: the stored nonce must reach id_token validation
+# --------------------------------------------------------------------------- #
+ISSUER = "https://idp.example"
 
-        async def get(self, key):
-            return self.data.get(key)
 
-        async def set(self, key, value, _expires_in=None):
-            self.data[key] = value
+def _signed_id_token_client():
+    """A client whose IdP metadata carries an in-memory JWKS, plus a signer."""
+    from joserfc import jwt
+    from joserfc.jwk import KeySet, RSAKey
 
-        async def delete(self, key):
-            self.data.pop(key, None)
+    from dash_auth_async.quart_client import QuartIntegration, QuartOAuth2App
 
-    cache = _Cache()
+    key = RSAKey.generate_key(2048, parameters={"kid": "k1"})
+    client = QuartOAuth2App(
+        QuartIntegration("idp"),
+        name="idp",
+        client_id="client-1",
+        client_secret="y",
+        access_token_url=f"{ISSUER}/token",
+        # Leftover kwargs become server_metadata: no discovery request.
+        issuer=ISSUER,
+        jwks=KeySet([key]).as_dict(private=False),
+        id_token_signing_alg_values_supported=["RS256"],
+    )
+
+    def sign(nonce):
+        now = int(time.time())
+        claims = {
+            "iss": ISSUER,
+            "sub": "user-1",
+            "aud": "client-1",
+            "iat": now,
+            "exp": now + 300,
+            "nonce": nonce,
+            "email": "a.b@mail.com",
+        }
+        return jwt.encode({"alg": "RS256", "kid": "k1"}, claims, key)
+
+    return client, sign
+
+
+def _run_callback(client, token, state_data, monkeypatch):
+    """Store ``state_data`` under state ``xyz``, then run the callback with
+    ``fake_fetch`` returning ``token``. Returns (result, fetch kwargs, session).
+    """
+    from quart import session as quart_session
+
+    fetched = {}
+
+    async def fake_fetch(**kwargs):
+        fetched.update(kwargs)
+        return dict(token)
+
+    monkeypatch.setattr(client, "fetch_access_token", fake_fetch)
+    app = _make_quart_app()
+
+    async def run():
+        async with app.test_request_context(
+            "/oidc/idp/callback?code=the-code&state=xyz", method="GET"
+        ):
+            await client.framework.set_state_data(quart_session, "xyz", state_data)
+            result = await client.authorize_access_token()
+            return result, dict(quart_session)
+
+    result, session = asyncio.run(run())
+    return result, fetched, session
+
+
+def test_authorize_access_token_validates_id_token_with_stored_nonce(monkeypatch):
+    client, sign = _signed_id_token_client()
+    token = {"access_token": "at", "token_type": "Bearer", "id_token": sign("n-1")}
+    state = {"nonce": "n-1", "redirect_uri": "https://app.example/cb"}
+
+    result, fetched, session = _run_callback(client, token, state, monkeypatch)
+
+    assert result["userinfo"]["sub"] == "user-1"
+    assert result["userinfo"]["email"] == "a.b@mail.com"
+    # The code and the redirect_uri saved at login go to the token endpoint.
+    assert fetched["code"] == "the-code"
+    assert fetched["redirect_uri"] == "https://app.example/cb"
+    # The state is single-use.
+    assert "_state_idp_xyz" not in session
+
+
+def test_authorize_access_token_rejects_id_token_with_wrong_nonce(monkeypatch):
+    """Replay protection: an id_token minted for another login is refused."""
+    from joserfc.errors import InvalidClaimError
+
+    client, sign = _signed_id_token_client()
+    token = {"access_token": "at", "token_type": "Bearer", "id_token": sign("other")}
+
+    with pytest.raises(InvalidClaimError, match="nonce"):
+        _run_callback(client, token, {"nonce": "n-1"}, monkeypatch)
+
+
+def test_authorize_access_token_without_id_token_has_no_userinfo(monkeypatch):
+    client, _sign = _signed_id_token_client()
+    token = {"access_token": "at", "token_type": "Bearer"}
+
+    result, _fetched, _session = _run_callback(
+        client, token, {"nonce": "n-1"}, monkeypatch
+    )
+
+    assert "userinfo" not in result
+
+
+def test_save_authorize_data_without_state_raises():
+    client = _make_oauth2_app()
+    with pytest.raises(RuntimeError, match="Missing state"):
+        asyncio.run(client.save_authorize_data(redirect_uri="https://app.example/cb"))
+
+
+# --------------------------------------------------------------------------- #
+# Cache-backed state (OAuth(cache=...)): the session holds only a marker
+# --------------------------------------------------------------------------- #
+class _AsyncCache:
+    def __init__(self):
+        self.store = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, expires=None):
+        self.store[key] = value
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+
+def test_cache_state_roundtrip_keeps_data_out_of_the_session():
+    cache = _AsyncCache()
+    integration = QuartIntegration("idp", cache=cache)
+    session = {"user": "kept"}
+
+    async def run():
+        await integration.set_state_data(session, "abc", {"nonce": "n"})
+        assert "data" not in session["_state_idp_abc"]
+        assert "_state_idp_abc" in cache.store
+        assert session["user"] == "kept"  # the sweep only touches state keys
+        assert await integration.get_state_data(session, "abc") == {"nonce": "n"}
+        await integration.clear_state_data(session, "abc")
+        assert "_state_idp_abc" not in cache.store
+        assert "_state_idp_abc" not in session
+
+    asyncio.run(run())
+
+
+def test_cache_state_requires_the_session_marker():
+    """RFC 6749 10.12: the callback must come from the browser that started
+    the login. Valid cached state without that browser's marker is refused.
+    """
+    cache = _AsyncCache()
+    integration = QuartIntegration("idp", cache=cache)
+
+    async def run():
+        await integration.set_state_data({}, "abc", {"nonce": "n"})
+        assert "_state_idp_abc" in cache.store
+        assert await integration.get_state_data({}, "abc") is None
+        assert await integration.get_state_data(None, "abc") is None
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("cached", [None, "not json"], ids=["missing", "corrupt"])
+def test_cache_state_unreadable_value_is_none(cached):
+    cache = _AsyncCache()
+    integration = QuartIntegration("idp", cache=cache)
+    session = {"_state_idp_abc": {"exp": time.time() + 60}}
+    if cached is not None:
+        cache.store["_state_idp_abc"] = cached
+
+    assert asyncio.run(integration.get_state_data(session, "abc")) is None
+
+
+def test_cache_state_without_session():
+    cache = _AsyncCache()
     integration = QuartIntegration("idp", cache=cache)
 
     async def run():
         await integration.set_state_data(None, "abc", {"nonce": "n"})
-        assert "_state_idp_abc" in cache.data
-        # No session marker ties the callback to the browser that started it.
-        assert await integration.get_state_data(None, "abc") is None
+        await integration.clear_state_data(None, "abc")
+        assert cache.store == {}
 
     asyncio.run(run())
+
+
+def test_state_without_cache_or_session_is_none():
+    integration = QuartIntegration("idp")
+    assert asyncio.run(integration.get_state_data(None, "abc")) is None
+
+
+def test_oauth_init_app_accepts_cache_and_token_hooks():
+    from dash_auth_async.quart_client import OAuth
+
+    def fetch_token(*_a):
+        return None
+
+    def update_token(*_a):
+        return None
+
+    cache = _AsyncCache()
+    oauth = OAuth()
+    oauth.init_app(
+        _make_quart_app(),
+        cache=cache,
+        fetch_token=fetch_token,
+        update_token=update_token,
+    )
+    assert oauth.cache is cache
+    assert oauth.fetch_token is fetch_token
+    assert oauth.update_token is update_token
