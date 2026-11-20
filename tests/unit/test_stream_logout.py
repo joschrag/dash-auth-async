@@ -294,3 +294,33 @@ def test_slo014_default_fallback_ends_a_revoked_stream_with_prevent_update(
     monkeypatch.setattr(rev, "CHECK_INTERVAL", 0.0)
     contextvars.Context().run(asyncio.run, drain())
     assert cleaned_up == [True]
+
+
+@pytest.mark.parametrize(
+    ("in_request", "session_error", "expected"),
+    [
+        (True, None, "sid-1"),
+        (True, RuntimeError("no SessionMiddleware"), None),
+        (False, None, None),
+    ],
+    ids=["session", "no-session-configured", "websocket"],
+)
+def test_slo015_session_id_capture_never_raises(
+    monkeypatch, in_request, session_error, expected
+):
+    """The custom_data hook runs on every dispatch: a server without a session
+    (e.g. FastAPI without SessionMiddleware) or a WS dispatch yields no id."""
+    from dash_auth_async import group_protection
+
+    class FakeBackend:
+        def has_request_context(self):
+            return in_request
+
+        @property
+        def session(self):
+            if session_error is not None:
+                raise session_error
+            return {rev.SESSION_ID_KEY: "sid-1"}
+
+    monkeypatch.setattr(group_protection, "get_active_backend", FakeBackend)
+    assert group_protection._capture_session_id(None) == expected

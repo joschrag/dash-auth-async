@@ -50,14 +50,12 @@ def revoke_session_streams(app: Any, sid: str | None) -> None:
         logger.exception("Could not revoke the streams of a logged-out session.")
 
 
-def is_session_revoked(app: Any, sid: str | None) -> bool:
+def is_session_revoked(app: Any, sid: str) -> bool:
     """Whether ``sid`` was logged out. Store errors count as revoked (fail closed).
 
     Returns:
         True when the session's streams must stop.
     """
-    if not sid:
-        return False
     try:
         return _read_revoked(app, sid)
     except Exception as err:  # pylint: disable=broad-exception-caught
