@@ -88,3 +88,21 @@ def test_session_get_is_none_off_request_and_without_secret_key():
     with app.server.test_request_context("/"):
         backend.session["user"] = {"email": "a"}
         assert backend.session_get("user") == {"email": "a"}
+
+
+def test_public_api_exports_base_classes_and_backends():
+    """``Auth``, ``Backend`` and the built-in backends import from the top level.
+
+    ``Auth`` matches upstream ``dash_auth``; ``Backend`` is what the README tells
+    users to subclass for custom servers.
+    """
+    import dash_auth_async
+    from dash_auth_async import auth, public_routes
+
+    assert dash_auth_async.Auth is auth.Auth
+    assert dash_auth_async.Backend is backends.Backend
+    assert dash_auth_async.FlaskBackend is backends.FlaskBackend
+    assert dash_auth_async.QuartBackend is backends.QuartBackend
+    assert dash_auth_async.FastAPIBackend is backends.FastAPIBackend
+    assert dash_auth_async.get_url_base is public_routes.get_url_base
+    assert all(hasattr(dash_auth_async, name) for name in dash_auth_async.__all__)
