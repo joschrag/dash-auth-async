@@ -160,3 +160,4 @@ convention = "google"
 [tool.coverage.run]
 # Measure subprocesses too: the no-authlib test needs a fresh interpreter.
 patch = ["subprocess"]
+branch = true

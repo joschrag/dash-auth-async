@@ -48,10 +48,19 @@ jobs:
         run: |
           uv export --frozen --no-hashes --all-extras --group dev             --no-emit-project --no-emit-package dash -o constraints.txt
           uv venv --python ${{ matrix.python-version }}
-          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             pytest websocket-client
+          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             pytest pytest-cov websocket-client
 
       - name: Test
-        run: uv run --no-sync pytest --headless
+        run: uv run --no-sync pytest --headless --cov=dash_auth_async --cov-report=xml
+
+      # One upload per Dash row: older-Dash rows lack the quart/fastapi extras,
+      # so they cover the import-fallback branches the coverage job cannot reach.
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   coverage:
     runs-on: ubuntu-latest
