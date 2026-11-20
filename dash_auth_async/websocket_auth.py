@@ -9,7 +9,9 @@ upgrade to one file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
+import logging
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +20,8 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from .backends import get_active_backend
+
+logger = logging.getLogger(__name__)
 
 # Name of the pre-login, browser-stable cookie that ties an anonymous WebSocket
 # back to the browser that later authenticates over HTTP. Minted on first
@@ -174,15 +178,13 @@ def _schedule_ws_close(loop: Any, ws: Any) -> None:
     """
 
     async def _safe_close() -> None:
-        try:
+        # Already closing/closed -- nothing to recover.
+        with contextlib.suppress(Exception):
             await ws.close(code=4408)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass  # already closing/closed -- nothing to recover
 
-    try:
+    # Loop gone (socket already torn down) -- nothing to close.
+    with contextlib.suppress(Exception):
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_safe_close()))
-    except Exception:  # pylint: disable=broad-exception-caught
-        pass  # loop gone (socket already torn down) -- nothing to close
 
 
 def _ws_message_hook(ws: Any, message: Any):
@@ -262,7 +264,9 @@ def _ws_connect_hook(ws: Any):
     try:
         _track_ws(ws)
     except Exception:  # pylint: disable=broad-exception-caught
-        pass  # never let bookkeeping block a connection
+        # Never let bookkeeping block a connection, but say so: an untracked
+        # socket is one logout can no longer close.
+        logger.exception("Failed to track websocket; logout will not close it")
     return True
 
 

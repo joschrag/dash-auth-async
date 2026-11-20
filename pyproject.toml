@@ -128,7 +128,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 preview = true
-select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
+select = ["FAST","I","D","DOC","PL","UP","PERF","RUF","S"]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests are self-describing and have different idioms than library code:
@@ -143,7 +143,16 @@ select = ["FAST","I","D","DOC","PL","UP","PERF","RUF"]
     "PLR0917",  # ...same, for positional-argument count
     "PERF203",  # try/except in a loop is irrelevant in test setup
     "RUF029",   # async mocks intentionally match an awaited interface without awaiting
+    "S101",     # assert is how pytest tests
+    "S105",     # fixture credentials and secret keys are fake by design
+    "S106",     # ...same, passed as arguments
+    "S110",     # best-effort cleanup in teardown may swallow errors
+    "S113",     # requests to local test servers; pytest-level timeouts apply
+    "S404",     # subprocess runs a fixed interpreter command, no untrusted input
+    "S603",     # ...same
 ]
+# Demo app: hardcoded credentials are the point of the example.
+"usage.py" = ["S105"]
 
 [tool.ruff.format]
 quote-style = "double"
