@@ -423,6 +423,7 @@ class QuartBackend(_ContextLocalBackend):
             WS_CLIENT_COOKIE,
             close_anonymous_ws,
             mint_ws_client_id,
+            ws_client_cookie_header,
         )
 
         @server.before_request
@@ -454,12 +455,8 @@ class QuartBackend(_ContextLocalBackend):
             # Minted on every response that lacks it -- including the BasicAuth
             # 401 challenge -- so it predates a later pre-login WS handshake.
             if quart.request.cookies.get(WS_CLIENT_COOKIE) is None:
-                response.set_cookie(
-                    WS_CLIENT_COOKIE,
-                    mint_ws_client_id(),
-                    httponly=True,
-                    samesite="Lax",
-                    path="/",
+                response.headers.add(
+                    "Set-Cookie", ws_client_cookie_header(mint_ws_client_id())
                 )
             return response
 
@@ -784,6 +781,13 @@ class FastAPIBackend(Backend):
         here is visible inside the Dash callback, which runs in the same
         task/context via the inner DashMiddleware's ``copy_context()``.
         """
+        from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
+            WS_CLIENT_COOKIE,
+            close_anonymous_ws,
+            mint_ws_client_id,
+            ws_client_cookie_header,
+        )
+
         backend = self
 
         class _AuthMiddleware:
@@ -802,12 +806,6 @@ class FastAPIBackend(Backend):
                 # already present at a later pre-login WS handshake. This ties an
                 # anonymous socket back to the browser that authenticates here,
                 # letting login retire the stale socket (see websocket_auth).
-                from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
-                    WS_CLIENT_COOKIE,
-                    close_anonymous_ws,
-                    mint_ws_client_id,
-                )
-
                 client_id = request.cookies.get(WS_CLIENT_COOKIE)
                 set_client_cookie = client_id is None
                 if set_client_cookie:
@@ -818,8 +816,7 @@ class FastAPIBackend(Backend):
                         message.setdefault("headers", []).append(
                             (
                                 b"set-cookie",
-                                f"{WS_CLIENT_COOKIE}={client_id}; Path=/; "
-                                f"HttpOnly; SameSite=Lax".encode("latin-1"),
+                                ws_client_cookie_header(client_id).encode("latin-1"),
                             )
                         )
                     await _send(message)

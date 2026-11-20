@@ -97,6 +97,15 @@ def mint_ws_client_id() -> str:
     return secrets.token_urlsafe(16)
 
 
+def ws_client_cookie_header(client_id: str) -> str:
+    """``Set-Cookie`` value for the client-id cookie, shared by every backend.
+
+    Returns:
+        The header value (HttpOnly, SameSite=Lax, site-wide path).
+    """
+    return f"{WS_CLIENT_COOKIE}={client_id}; Path=/; HttpOnly; SameSite=Lax"
+
+
 def _register_ws(
     registry: dict[str, _WSEntry], client_id: str | None, ws: Any, loop: Any
 ) -> None:
