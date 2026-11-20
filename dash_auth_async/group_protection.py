@@ -56,13 +56,9 @@ def _current_user() -> dict | None:
     """
     backend = get_active_backend()
     if backend.has_request_context():
-        # Normal HTTP path: read the user from the framework session.
-        try:
-            return backend.session.get("user")
-        except RuntimeError:
-            # Session unavailable (e.g. FastAPI without SessionMiddleware):
-            # treat as not authenticated rather than crashing.
-            return None
+        # Normal HTTP path: read the user from the framework session (None,
+        # i.e. unauthenticated, when the server has no session configured).
+        return backend.session_get("user")
     # WebSocket worker path: no framework context here, so read the user the
     # websocket_message hook stashed for this dispatch.
     return _WS_AUTH_USER.get()
@@ -413,13 +409,7 @@ def _capture_session_id(_ctx) -> str | None:
     Returns:
         The session id, or None (no request, no session, or no id).
     """
-    backend = get_active_backend()
-    if not backend.has_request_context():
-        return None
-    try:
-        return backend.session.get(SESSION_ID_KEY)
-    except RuntimeError:  # no session configured on this server
-        return None
+    return get_active_backend().session_get(SESSION_ID_KEY)
 
 
 def _install_user_capture_hook() -> None:

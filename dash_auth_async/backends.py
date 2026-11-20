@@ -155,6 +155,20 @@ class Backend(ABC):
     def redirect(self, location: str) -> Any:
         """Return a redirect response to the given location."""
 
+    def session_get(self, key: str) -> Any:
+        """Read ``session[key]`` without raising.
+
+        Returns:
+            The value, or None outside a request or when the server has no
+            session configured (e.g. FastAPI without ``SessionMiddleware``).
+        """
+        if not self.has_request_context():
+            return None
+        try:
+            return self.session.get(key)
+        except RuntimeError:
+            return None
+
     # --- Operations that diverge on FastAPI; defaults reproduce the
     # --- Flask/Quart behavior so those backends inherit unchanged. These
     # --- are concrete interface defaults, not all of which use `self`, so
@@ -897,11 +911,7 @@ class FastAPIBackend(Backend):
                     # Authorized. If this browser is now logged in, retire any
                     # stale anonymous sockets it opened before login so the
                     # renderer reconnects authenticated before the first click.
-                    try:
-                        logged_in = backend.session.get("user") is not None
-                    except RuntimeError:
-                        logged_in = False  # no SessionMiddleware -> nothing to retire
-                    if logged_in:
+                    if backend.session_get("user") is not None:
                         close_anonymous_ws(client_id)
 
                     # Backfill Dash's request ContextVar so the catch-all's

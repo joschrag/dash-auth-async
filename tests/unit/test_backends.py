@@ -75,3 +75,16 @@ def test_flask_backend_new_method_defaults():
 
     oauth = backend.make_oauth(server)
     assert isinstance(oauth, FlaskOAuth)
+
+
+def test_session_get_is_none_off_request_and_without_secret_key():
+    """``session_get`` never raises: None off-request and with no session."""
+    app = Dash(__name__)
+    backend = FlaskBackend()
+    assert backend.session_get("user") is None  # no request context
+    with app.server.test_request_context("/"):  # no secret_key -> no session
+        assert backend.session_get("user") is None
+    app.server.secret_key = "k"
+    with app.server.test_request_context("/"):
+        backend.session["user"] = {"email": "a"}
+        assert backend.session_get("user") == {"email": "a"}
