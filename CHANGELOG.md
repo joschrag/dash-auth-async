@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Package metadata: a real description, `Changelog` and `Issues` project links, the `Framework :: AsyncIO` and `Framework :: FastAPI` classifiers, and an SPDX `license = "MIT"` expression (PEP 639; the build now needs `setuptools>=77`)
 - The minimum Dash version is now 3 (`dash>=3`). Dash 2 was never covered by CI, whose lowest tested range is `>=3,<4`
 - Added the `Framework :: Dash` classifier and search keywords (including `quart`, which has no trove classifier)
+- Less work per request in the auth check: `OIDCAuth` builds its route map once instead of on every request, and the public-route lookup no longer builds an empty route map each time it runs
+- `get_public_callbacks()` (internal, not exported) now returns a `frozenset` instead of a `list`
 
 ### Added
 - The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
@@ -29,6 +31,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
               token_store[user["sub"]] = token.get("refresh_token")  # server-side
           return super().after_logged_in(user, idp, token)
   ```
+
+### Fixed
+- `public_callback` now works with dict outputs and inputs (`output=dict(...)`, `inputs=dict(...)`). Before, it raised `AttributeError` when the module was imported, after Dash had already registered the callback
 
 ### Security
 - Dropping Python 3.10 closes the `tornado` and `filelock` advisories that 1.3.6 left open on 3.10; every install now resolves `tornado>=6.6`
