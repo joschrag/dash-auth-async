@@ -1,5 +1,16 @@
 # Contributing
 
+## Development
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the dev dependencies and run a single test:
+
+```bash
+uv sync --group dev --all-extras
+uv run pytest -k ba001
+```
+
+User guides live in [`docs/`](docs/).
+
 ## Publishing
 
 This package is available on PyPI. Releases are triggered automatically via GitHub Actions when a version tag is pushed.
