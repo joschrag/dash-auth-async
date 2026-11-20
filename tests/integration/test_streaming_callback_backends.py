@@ -20,6 +20,7 @@ from dash import Dash, Input, Output, html
 from packaging.version import Version
 
 from dash_auth_async import BasicAuth, protected_callback, public_callback
+from tests._shared_storage import fresh_local_storage
 
 requests = pytest.importorskip("requests", reason="requests is not installed")
 
@@ -35,16 +36,6 @@ BACKENDS = ["flask", "quart", "fastapi"]
 USERS = {"admin": "admin", "guest": "guest"}
 PATH = "/_dash-update-component"
 TIMEOUT = 15
-
-
-def _fresh_storage(storage_cls):
-    """A shared storage with its own owner election.
-
-    Every default ``LocalSharedStorage`` in a process shares one owner address
-    (a socket file on POSIX). Here that owner belongs to whichever test's app
-    started first; once that test's server stops, later tests time out on it.
-    """
-    return storage_cls(namespace=uuid.uuid4().hex)
 
 
 def _headers(user):
@@ -65,15 +56,11 @@ def _serve(dash_thread_server, backend, decorator, **kwargs):
     Returns:
         ``(base_url, output_id, callback_body)``.
     """
-    from dash import LocalSharedStorage  # dash>=4.5 only
-
     if backend != "flask":
         pytest.importorskip(backend)
     tag = uuid.uuid4().hex
     btn, out = f"btn-{tag}", f"out-{tag}"
-    app = Dash(
-        __name__, backend=backend, shared_storage=_fresh_storage(LocalSharedStorage)
-    )
+    app = Dash(__name__, backend=backend, shared_storage=fresh_local_storage())
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     decorator(
         Output(out, "children"),
