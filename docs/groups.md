@@ -19,6 +19,7 @@ If you wish to use this feature with BasicAuth, you will need to define the grou
 basicauth users:
 
 ```python
+from dash import Dash
 from dash_auth_async import BasicAuth
 
 app = Dash(__name__)
