@@ -1,3 +1,5 @@
+import ctypes
+import threading
 from typing import Any
 
 import dash.testing.application_runners as _runners
@@ -91,6 +93,27 @@ def _stop_with_graceful_async(self: Any) -> Any:
 
 
 _runners.ThreadedRunner.stop = _stop_with_graceful_async  # type: ignore
+
+
+def _kill_new_threads(self: Any) -> None:
+    """``KillerThread.kill`` without its teardown race.
+
+    Dash lists the threads started since the runner was created, then sends
+    each a ``SystemExit``. One that finishes in between (e.g. a request thread
+    closing its connection) makes ``PyThreadState_SetAsyncExc`` return 0, and
+    Dash raised ``ValueError: Invalid thread id`` -- a flaky teardown error for
+    a thread that is already gone, which is the goal of the kill anyway.
+    """
+    for thread in threading.enumerate():
+        if thread.ident is None or thread.ident in self._old_threads:
+            continue
+        # 0 means the thread already exited: nothing left to kill.
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_long(thread.ident), ctypes.py_object(SystemExit)
+        )
+
+
+_runners.KillerThread.kill = _kill_new_threads  # type: ignore
 
 
 @pytest.fixture

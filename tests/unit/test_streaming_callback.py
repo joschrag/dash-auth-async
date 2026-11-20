@@ -18,6 +18,7 @@ from dash._callback import GLOBAL_CALLBACK_MAP
 from packaging.version import Version
 
 from dash_auth_async import BasicAuth, protected, protected_callback, public_callback
+from tests._shared_storage import fresh_local_storage
 
 pytestmark = [
     pytest.mark.skipif(
@@ -43,16 +44,6 @@ def streams_not_shut_down():
     from dash._streaming import _shutdown
 
     _shutdown.clear()
-
-
-def _fresh_storage(storage_cls):
-    """A shared storage with its own owner election.
-
-    Every default ``LocalSharedStorage`` in a process shares one owner address
-    (a socket file on POSIX). Here that owner belongs to whichever test's app
-    started first; once that test's server stops, later tests time out on it.
-    """
-    return storage_cls(namespace=uuid.uuid4().hex)
 
 
 def _ids():
@@ -112,10 +103,8 @@ def _post_stream(user, *, direct=False):
     Returns:
         ``(response, output_id)``.
     """
-    from dash import LocalSharedStorage  # dash>=4.5 only; module must import on older
-
     btn, out = _ids()
-    app = Dash(__name__, shared_storage=_fresh_storage(LocalSharedStorage))
+    app = Dash(__name__, shared_storage=fresh_local_storage())
     BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     if direct:
@@ -242,10 +231,8 @@ def _anonymous_multiplex_app(decorator, **kwargs):
     """
     import re
 
-    from dash import LocalSharedStorage
-
     btn, out = _ids()
-    app = Dash(__name__, shared_storage=_fresh_storage(LocalSharedStorage))
+    app = Dash(__name__, shared_storage=fresh_local_storage())
     BasicAuth(app, USERS, public_routes=["/"], secret_key="Test!")
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     _register(decorator, btn, out, _agen, **kwargs)

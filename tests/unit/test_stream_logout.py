@@ -19,6 +19,7 @@ from packaging.version import Version
 
 from dash_auth_async import OIDCAuth, protected, stream_revocation as rev
 from dash_auth_async.group_protection import _SID_NAMESPACE, _USER_NAMESPACE
+from tests._shared_storage import fresh_local_storage
 
 pytestmark = [
     pytest.mark.skipif(
@@ -33,13 +34,7 @@ ADMIN = {"email": "a@b.c", "groups": ["admin"]}
 
 def _app(**kwargs):
     """Dash serves HTTP streams only with shared storage, so tests use one."""
-    from dash import LocalSharedStorage  # dash>=4.5 only
-
-    return Dash(
-        __name__,
-        shared_storage=LocalSharedStorage(namespace=uuid.uuid4().hex),
-        **kwargs,
-    )
+    return Dash(__name__, shared_storage=fresh_local_storage(), **kwargs)
 
 
 def _run_stream(agen, sid, between=None, *, interval=0.0, monkeypatch):

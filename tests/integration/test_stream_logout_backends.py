@@ -17,6 +17,7 @@ from packaging.version import Version
 
 from dash_auth_async import OIDCAuth, protected_callback
 from dash_auth_async.stream_revocation import ensure_session_id
+from tests._shared_storage import fresh_local_storage
 
 requests = pytest.importorskip("requests", reason="requests is not installed")
 
@@ -48,15 +49,13 @@ def _serve(dash_thread_server, backend, **callback_kwargs):
     """
     if backend != "flask":
         pytest.importorskip(backend)
-    from dash import LocalSharedStorage  # dash>=4.5 only
-
     tag = uuid.uuid4().hex
     btn, out = f"btn-{tag}", f"out-{tag}"
     # Dash serves HTTP streams only with shared storage.
     app = Dash(
         __name__,
         backend=backend,
-        shared_storage=LocalSharedStorage(namespace=uuid.uuid4().hex),
+        shared_storage=fresh_local_storage(),
     )
     app.layout = html.Div([html.Button(id=btn), html.Div(id=out)])
     protected_callback(
