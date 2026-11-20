@@ -19,15 +19,15 @@ from dash._grouping import flatten_grouping  # noqa: PLC2701
 from dash._no_update import NoUpdate  # noqa: PLC2701 — Dash's no_update check
 from dash._utils import (  # noqa: PLC2701
     clean_property_name,
-    create_callback_id,
     stringify_id,
     to_json,
 )
-from dash.dependencies import Output, handle_grouped_callback_args
+from dash.dependencies import Output
 from dash.exceptions import MissingCallbackContextException, PreventUpdate
 
 from . import stream_revocation
 from .backends import detect_backend, get_active_backend
+from .public_routes import callback_id
 from .stream_revocation import SESSION_ID_KEY
 from .websocket_auth import _WS_AUTH_USER
 
@@ -494,12 +494,8 @@ def _register_dispatch_gate(callback_args, callback_kwargs, gate: Callable) -> N
             callback itself is registered ungated -- silently skipping the gate (as
             ``public_callback`` may skip its whitelist) would leave it open.
     """
-    output, inputs, _state, _indices, _prevent = handle_grouped_callback_args(
-        callback_args, callback_kwargs
-    )
     # Same id Dash computes in register_callback, so dispatch lookups match.
-    flat_output = output if isinstance(output, Output) else flatten_grouping(output)
-    callback_id = create_callback_id(flat_output, inputs, no_output=not flat_output)
+    output, cb_id = callback_id(callback_args, callback_kwargs)
     try:
         app = get_app()
     except Exception as err:
@@ -509,9 +505,7 @@ def _register_dispatch_gate(callback_args, callback_kwargs, gate: Callable) -> N
         ) from err
     backend = detect_backend(app.server)
     gates = backend.read_config(app.server, DISPATCH_GATES, {})
-    backend.store_config(
-        app.server, DISPATCH_GATES, {**gates, callback_id: (gate, output)}
-    )
+    backend.store_config(app.server, DISPATCH_GATES, {**gates, cb_id: (gate, output)})
 
 
 def refuses_ws(app, output: str | None) -> bool:

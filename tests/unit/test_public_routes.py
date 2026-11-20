@@ -2,6 +2,7 @@
 
 import pytest
 from dash import Dash, Input, Output
+from dash._callback import GLOBAL_CALLBACK_MAP
 
 from dash_auth_async import backends
 from dash_auth_async.public_routes import (
@@ -115,3 +116,23 @@ def test_public_helpers_resolve_backend_from_app_server_not_global_fallback():
 
     # The callbacks reader returns its default through the same backend path.
     assert get_public_callbacks(app) == []
+
+
+def test_public_callback_whitelists_dict_grouped_callback():
+    """A flexible-signature (dict) callback must register and be whitelisted.
+
+    Regression: ``public_callback`` derived its id with the non-grouped
+    ``handle_callback_args``, which raises ``AttributeError`` on dict outputs and
+    inputs -- after Dash had already registered the callback.
+    """
+    app = Dash(__name__)
+    add_public_routes(app, [])
+
+    public_callback(
+        output={"x": Output("g1", "children"), "y": Output("g2", "children")},
+        inputs={"v": Input("gi", "value")},
+    )(lambda v: {"x": v, "y": v})
+
+    ids = get_public_callbacks(app)
+    assert ids
+    assert ids[-1] in GLOBAL_CALLBACK_MAP
