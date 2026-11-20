@@ -52,9 +52,8 @@ def get_url_base(app: Dash) -> str:
     """Return the URL prefix configured for the Dash app (e.g. '/app/').
 
     Returns '' when no prefix is configured. Checks url_base_pathname first,
-    then requests_pathname_prefix, then routes_pathname_prefix. In normal Dash
-    usage these three values are always kept in sync by Dash itself; the
-    fallback order only matters in advanced deployments.
+    then routes_pathname_prefix (the prefix the server actually routes on;
+    requests_pathname_prefix is client-side and not read here).
 
     This reads from app.config at call time, so it must be invoked after the
     Dash app's URL config is fully initialised. In particular, calling
@@ -77,10 +76,10 @@ def add_public_routes(app: Dash, routes: list):
     Some routes are made public by default:
     * All dash scripts (_dash-dependencies, _dash-component-suites/**)
     * All dash mechanics routes (_dash-layout, _reload-hash)
-    * All assets with extension .css, .js, .svg, .jpg, .png, .gif, .webp
-      Note: you can modify the extension by setting the
-      `DASH_ASSETS_PUBLIC_EXTENSIONS` envvar (comma-separated list of
-      extensions, e.g. "js,css,svg").
+    * All assets with extension .js or .css
+      Note: you can modify the extensions by setting the
+      `DASH_PUBLIC_ASSETS_EXTENSIONS` envvar before import (comma-separated
+      list of extensions, e.g. "js,css,svg").
     * The favicon
 
     If you use callbacks on your public routes, you should use dash_auth_async's

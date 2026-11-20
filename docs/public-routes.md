@@ -15,7 +15,7 @@ USER_PWD = {
 }
 BasicAuth(app, USER_PWD, public_routes=["/"])
 
-add_public_routes(app, public_routes=["/user/<user_id>/public"])
+add_public_routes(app, routes=["/user/<user_id>/public"])
 ```
 
 NOTE: If you are using server-side callbacks on your public routes, you should also use dash_auth_async's new `public_callback` rather than the default Dash callback.

@@ -33,7 +33,11 @@ from dash_auth_async import BasicAuth
 
 app = Dash(__name__, backend="quart")
 
-BasicAuth(app, {"admin": "admin", "viewer": "viewer123"})
+BasicAuth(
+    app,
+    {"admin": "admin", "viewer": "viewer123"},
+    secret_key="aStaticSecretKey!",  # needed for websocket=True callbacks
+)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8050, debug=True)
