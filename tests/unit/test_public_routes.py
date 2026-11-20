@@ -115,7 +115,7 @@ def test_public_helpers_resolve_backend_from_app_server_not_global_fallback():
     )
 
     # The callbacks reader returns its default through the same backend path.
-    assert get_public_callbacks(app) == []
+    assert get_public_callbacks(app) == frozenset()
 
 
 def test_public_callback_whitelists_dict_grouped_callback():
@@ -134,5 +134,5 @@ def test_public_callback_whitelists_dict_grouped_callback():
     )(lambda v: {"x": v, "y": v})
 
     ids = get_public_callbacks(app)
-    assert ids
-    assert ids[-1] in GLOBAL_CALLBACK_MAP
+    assert len(ids) == 1
+    assert ids <= GLOBAL_CALLBACK_MAP.keys()

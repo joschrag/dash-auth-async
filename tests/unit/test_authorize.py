@@ -89,7 +89,7 @@ def test_callback_with_missing_body_returns_login_request():
 def test_public_callback_is_allowed():
     app = Dash(__name__)
     auth = StubAuth(app, authorized=False)
-    app.server.config[PUBLIC_CALLBACKS] = ["output.children"]
+    app.server.config[PUBLIC_CALLBACKS] = frozenset({"output.children"})
     body = {"output": "output.children", "inputs": []}
     assert authorize(auth, CALLBACK_PATH, body) is None
 

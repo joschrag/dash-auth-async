@@ -132,7 +132,8 @@ def public_callback(*callback_args, **callback_kwargs):
             backend.store_config(
                 app.server,
                 PUBLIC_CALLBACKS,
-                [*backend.read_config(app.server, PUBLIC_CALLBACKS, []), cb_id],
+                backend.read_config(app.server, PUBLIC_CALLBACKS, frozenset())
+                | {cb_id},
             )
         except Exception:
             print(
@@ -153,15 +154,17 @@ def get_public_routes(app: Dash) -> MapAdapter:
     Returns:
         The MapAdapter holding the app's registered public routes.
     """
-    return detect_backend(app.server).read_config(
-        app.server, PUBLIC_ROUTES, Map([]).bind("")
-    )
+    routes = detect_backend(app.server).read_config(app.server, PUBLIC_ROUTES)
+    # Not a read_config default: that would build a Map on every request.
+    return routes if routes is not None else Map([]).bind("")
 
 
-def get_public_callbacks(app: Dash) -> list:
+def get_public_callbacks(app: Dash) -> frozenset[str]:
     """Retrieve the public callbacks ids.
 
     Returns:
-        The list of whitelisted public callback ids.
+        The set of whitelisted public callback ids (O(1) membership per request).
     """
-    return detect_backend(app.server).read_config(app.server, PUBLIC_CALLBACKS, [])
+    return detect_backend(app.server).read_config(
+        app.server, PUBLIC_CALLBACKS, frozenset()
+    )
