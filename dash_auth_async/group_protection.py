@@ -7,7 +7,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 import dash
@@ -206,7 +206,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
             async def agen_wrap(*args, **kwargs):
                 sid = _adopt_dispatch_user()
                 logged_out = _logout_watch(sid)
-                if next(logged_out):
+                if await logged_out():
                     yield evaluate(unauthenticated_output)
                     return
                 fallback = gate()
@@ -219,7 +219,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
                     async for chunk in chunks:
                         # Not gate(): it may still see the stale request
                         # session; the logout is only visible in the store.
-                        if next(logged_out):
+                        if await logged_out():
                             yield evaluate(unauthenticated_output)
                             return
                         yield chunk
@@ -459,28 +459,31 @@ def _adopt_dispatch_user() -> str | None:
     return custom_data.get(_SID_NAMESPACE)
 
 
-def _logout_watch(sid: str | None):
-    """Yield, once per stream frame, whether ``sid`` has logged out.
+def _logout_watch(sid: str | None) -> Callable[[], Awaitable[bool]]:
+    """Build an async check, called once per stream frame: has ``sid`` logged out?
 
     Checks the store at most every ``CHECK_INTERVAL`` seconds and answers
-    False in between. Once revoked, stays revoked.
+    False in between. Once revoked, stays revoked. Async so the store lookup
+    (e.g. Redis) never blocks the event loop the stream runs on.
 
-    Yields:
-        True when the stream must stop.
+    Returns:
+        A coroutine function returning True when the stream must stop.
     """
-    if not sid:  # no revocable session (e.g. BasicAuth): nothing to watch
-        while True:
-            yield False
-    app = get_app()
+    app = get_app() if sid else None
     next_check = 0.0
-    while True:
+    revoked = False
+
+    async def logged_out() -> bool:
+        nonlocal next_check, revoked
+        if not sid:  # no revocable session (e.g. BasicAuth): nothing to watch
+            return False
         now = time.monotonic()
-        if now >= next_check:
-            if stream_revocation.is_session_revoked(app, sid):
-                while True:
-                    yield True
+        if not revoked and now >= next_check:
+            revoked = await stream_revocation.is_session_revoked(app, sid)
             next_check = now + stream_revocation.CHECK_INTERVAL
-        yield False
+        return revoked
+
+    return logged_out
 
 
 def _register_dispatch_gate(callback_args, callback_kwargs, gate: Callable) -> None:

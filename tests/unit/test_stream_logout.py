@@ -65,6 +65,18 @@ def _run_stream(agen, sid, between=None, *, interval=0.0, monkeypatch):
     return contextvars.Context().run(asyncio.run, drain())
 
 
+def _revoked(app, sid):
+    return asyncio.run(rev.is_session_revoked(app, sid))
+
+
+def _counting_read(lookups):
+    async def read(*_args):
+        lookups.append(1)
+        return False
+
+    return read
+
+
 def test_slo001_logout_mid_stream_stops_it_with_the_fallback(monkeypatch):
     """RED before fix: every chunk reached the page after logout."""
     app = _app()
@@ -110,7 +122,7 @@ def test_slo003_store_failure_fails_closed_and_logs(monkeypatch, caplog):
     async def agen(_n):
         yield "chunk-1"
 
-    def broken(*_args):
+    async def broken(*_args):
         raise ConnectionError("store down")
 
     monkeypatch.setattr(rev, "_read_revoked", broken)
@@ -125,7 +137,7 @@ def test_slo004_lookups_are_throttled_per_stream(monkeypatch):
     """A fast stream must not hit the store on every frame."""
     _app()
     lookups = []
-    monkeypatch.setattr(rev, "_read_revoked", lambda *_a: lookups.append(1) or False)
+    monkeypatch.setattr(rev, "_read_revoked", _counting_read(lookups))
 
     async def agen(_n):
         for i in range(50):
@@ -137,11 +149,29 @@ def test_slo004_lookups_are_throttled_per_stream(monkeypatch):
     assert len(lookups) == 1  # the start check only
 
 
+def test_slo016_revocation_check_does_not_block_the_event_loop(monkeypatch):
+    """RED before fix: the check used the sync ``shared_storage.get`` inside the
+    async stream, a blocking (e.g. Redis) round-trip on the event loop."""
+    app = _app()
+
+    def sync_get(*_args, **_kwargs):
+        raise AssertionError("sync shared_storage.get on the event loop")
+
+    monkeypatch.setattr(app.shared_storage, "get", sync_get)
+
+    async def agen(_n):
+        yield "chunk-1"
+        yield "chunk-2"
+
+    # A sync get raises -> fails closed -> ["login"]; the async path streams.
+    assert _run_stream(agen, "sid-1", monkeypatch=monkeypatch) == ["chunk-1", "chunk-2"]
+
+
 def test_slo005_stream_without_a_session_id_is_not_checked(monkeypatch):
     """BasicAuth (no logout) and non-OIDC sessions carry no sid: nothing to revoke."""
     _app()
     lookups = []
-    monkeypatch.setattr(rev, "_read_revoked", lambda *_a: lookups.append(1) or False)
+    monkeypatch.setattr(rev, "_read_revoked", _counting_read(lookups))
 
     async def agen(_n):
         yield "chunk-1"
@@ -165,8 +195,8 @@ def test_slo006_revocation_goes_to_shared_storage_with_a_ttl(monkeypatch):
     rev.revoke_session_streams(app, "sid-1")
 
     assert writes == [rev.REVOKED_TTL]
-    assert rev.is_session_revoked(app, "sid-1")
-    assert not rev.is_session_revoked(app, "sid-2")
+    assert _revoked(app, "sid-1")
+    assert not _revoked(app, "sid-2")
 
 
 def test_slo012_without_shared_storage_revocation_is_a_quiet_no_op(caplog):
@@ -175,7 +205,7 @@ def test_slo012_without_shared_storage_revocation_is_a_quiet_no_op(caplog):
     app = Dash(__name__)
     with caplog.at_level(logging.ERROR, logger=rev.__name__):
         rev.revoke_session_streams(app, "sid-1")
-    assert not rev.is_session_revoked(app, "sid-1")
+    assert not _revoked(app, "sid-1")
     assert not caplog.text
 
 
@@ -223,7 +253,7 @@ def test_slo009_logout_revokes_the_session_id():
 
     assert client.get("/oidc/logout").status_code == 200
 
-    assert rev.is_session_revoked(app, "sid-1")
+    assert _revoked(app, "sid-1")
     with client.session_transaction() as session:
         assert rev.SESSION_ID_KEY not in session
 

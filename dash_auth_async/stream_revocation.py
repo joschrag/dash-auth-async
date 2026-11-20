@@ -50,14 +50,14 @@ def revoke_session_streams(app: Any, sid: str | None) -> None:
         logger.exception("Could not revoke the streams of a logged-out session.")
 
 
-def is_session_revoked(app: Any, sid: str) -> bool:
+async def is_session_revoked(app: Any, sid: str) -> bool:
     """Whether ``sid`` was logged out. Store errors count as revoked (fail closed).
 
     Returns:
         True when the session's streams must stop.
     """
     try:
-        return _read_revoked(app, sid)
+        return await _read_revoked(app, sid)
     except Exception as err:  # pylint: disable=broad-exception-caught
         logger.warning("Stopping a protected stream: revocation check failed: %s", err)
         return True
@@ -68,7 +68,8 @@ def _write_revoked(app: Any, sid: str) -> None:
         app.shared_storage.set(_KEY_PREFIX + sid, True, ttl=REVOKED_TTL)
 
 
-def _read_revoked(app: Any, sid: str) -> bool:
+async def _read_revoked(app: Any, sid: str) -> bool:
     if not getattr(app, "shared_storage_enabled", False):
         return False
-    return bool(app.shared_storage.get(_KEY_PREFIX + sid))
+    # aget, not get: streams run on the event loop, and a sync get (Redis) blocks it.
+    return bool(await app.shared_storage.aget(_KEY_PREFIX + sid))
