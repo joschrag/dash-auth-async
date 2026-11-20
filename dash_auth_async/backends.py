@@ -404,7 +404,7 @@ class QuartBackend(_ContextLocalBackend):
         Raises:
             ImportError: if Quart is not installed.
         """
-        if quart is None:
+        if not HAS_QUART:
             raise ImportError(
                 "Quart is not installed. Please install it with `pip install quart` "
                 "or `pip install dash[quart]` to use the Quart backend."
@@ -498,8 +498,6 @@ class QuartBackend(_ContextLocalBackend):
         Returns:
             ``(quart_app, session["user"] or None)``.
         """
-        import quart  # noqa: PLC0415 — quart is an optional dependency
-
         # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
         # the real Quart app (the key in ``_AUTH_BY_SERVER``). Go through
         # ``getattr`` because the attribute is absent from the proxy's type stub.
@@ -644,9 +642,6 @@ class FastAPIBackend(Backend):
             None,
         )
 
-    def _has_session_middleware(self, server) -> bool:
-        return self._session_middleware(server) is not None
-
     def setup_session(
         self, server, secret_key: str | None, secure_session: bool = False
     ) -> None:
@@ -680,7 +675,7 @@ class FastAPIBackend(Backend):
         Returns:
             True if session storage is available.
         """
-        return self._has_session_middleware(server)
+        return self._session_middleware(server) is not None
 
     def store_config(self, server, key: str, value: Any) -> None:  # noqa: PLR6301
         """Stash an app-scoped config value on the FastAPI ``server.state``."""

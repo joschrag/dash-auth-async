@@ -93,21 +93,16 @@ class QuartIntegration(FrameworkIntegration):
         """Persist authorization state data, sweeping stale state keys."""
         key_prefix = f"_state_{self.name}_"
         key = f"{key_prefix}{state}"
-        now = time.time()
+        exp = time.time() + self.expires_in
         if self.cache:
             await self.cache.set(key, json.dumps({"data": data}), self.expires_in)
-            if session is not None:
-                # clear old state data to avoid session size growing
-                for old_key in list(session.keys()):
-                    if old_key.startswith(key_prefix):
-                        session.pop(old_key)
-                session[key] = {"exp": now + self.expires_in}
-        elif session is not None:
+        if session is not None:
             # clear old state data to avoid session size growing
             for old_key in list(session.keys()):
                 if old_key.startswith(key_prefix):
                     session.pop(old_key)
-            session[key] = {"data": data, "exp": now + self.expires_in}
+            # With a cache the session holds only the marker, not the data.
+            session[key] = {"exp": exp} if self.cache else {"data": data, "exp": exp}
 
     async def clear_state_data(self, session: dict[str, Any] | None, state: str):
         """Remove the stored authorization state data for ``state``."""

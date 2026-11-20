@@ -167,6 +167,8 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
         missing_permissions_output = unauthenticated_output
 
     def decorator(output: OutputVal):
+        is_func = callable(output)
+
         def evaluate(value: OutputVal) -> Any:
             # Fallback outputs are documented as no-argument callables or
             # static values.
@@ -191,7 +193,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
         # isgeneratorfunction / isasyncgenfunction (dash _callback.py). A plain
         # def wrapper erases it -- a coroutine is never awaited, a streaming
         # generator is returned unconsumed.
-        if isinstance(output, Callable) and inspect.isasyncgenfunction(output):
+        if is_func and inspect.isasyncgenfunction(output):
             # A stream's body runs where no session is readable (Flask drives it
             # on a private loop thread), so gate it with the user captured at
             # dispatch. A denied user's fallback then travels as a normal
@@ -222,7 +224,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
 
             return agen_wrap
 
-        if isinstance(output, Callable) and inspect.isgeneratorfunction(output):
+        if is_func and inspect.isgeneratorfunction(output):
 
             @functools.wraps(output)
             def gwrap(*args, **kwargs):
@@ -234,7 +236,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
 
             return gwrap
 
-        if isinstance(output, Callable) and inspect.iscoroutinefunction(output):
+        if is_func and inspect.iscoroutinefunction(output):
 
             @functools.wraps(output)
             async def awrap(*args, **kwargs):
@@ -249,11 +251,9 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
             fallback = gate()
             if fallback is not _PROCEED:
                 return fallback
-            if isinstance(output, Callable):
-                return output(*args, **kwargs)
-            return output
+            return output(*args, **kwargs) if is_func else output
 
-        if isinstance(output, Callable):
+        if is_func:
             return wrap
         return wrap()
 
