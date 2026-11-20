@@ -126,6 +126,9 @@ class Backend(ABC):
     # branching on isinstance(backend, ...).
     is_async: bool = False
 
+    # ``server.extensions`` key under which make_oauth's registry registers.
+    oauth_extension_key: str = "authlib.integrations.flask_client"
+
     @abstractmethod
     def has_request_context(self) -> bool:
         """Whether a request context is currently active."""
@@ -243,7 +246,7 @@ class Backend(ABC):
 
         return OAuth(server)
 
-    def get_oauth(self, server) -> Any:  # noqa: PLR6301
+    def get_oauth(self, server) -> Any:
         """Retrieve the authlib OAuth registry stored by :meth:`make_oauth`.
 
         Symmetric with ``make_oauth``: each backend knows where it put its own
@@ -252,9 +255,7 @@ class Backend(ABC):
         Returns:
             The registry, or None if ``OIDCAuth`` has not run yet.
         """
-        return getattr(server, "extensions", {}).get(
-            "authlib.integrations.flask_client"
-        )
+        return getattr(server, "extensions", {}).get(self.oauth_extension_key)
 
     def oauth_authorize_redirect(  # noqa: PLR6301
         self, client, redirect_uri: str, **kwargs
@@ -313,40 +314,66 @@ class Backend(ABC):
         raise NotImplementedError
 
 
-class FlaskBackend(Backend):
-    """Backend adapter for a Flask server."""
+class _ContextLocalBackend(Backend):
+    """Shared adapter for frameworks with Flask-style context-local globals.
+
+    Flask and Quart expose the same module-level API (``request``, ``session``,
+    ``has_request_context``, ``url_for``, ``redirect``); subclasses only name
+    the module in ``_fw``.
+    """
+
+    _fw: Any
 
     # Properties, not class attributes: ABCMeta probes every namespace
     # value for __isabstractmethod__ at class creation, which unwraps
     # the context-local proxies outside any request and raises.
     @property
     def request(self) -> Any:
-        """Flask's request context-local proxy.
+        """The framework's request context-local proxy.
 
         Returns:
-            The Flask request proxy.
+            The request proxy.
         """
-        return flask.request
+        return self._fw.request
 
     @property
     def session(self) -> MutableMapping:
-        """Flask's session mapping.
+        """The framework's session mapping.
 
         Returns:
-            The Flask session proxy.
+            The session proxy.
         """
-        return flask.session
+        return self._fw.session
 
-    # The methods below are thin adapters over module-level framework
-    # functions; they must stay instance methods to satisfy the Backend
-    # interface, so PLR6301 (no-self-use) is suppressed on each.
-    def has_request_context(self) -> bool:  # noqa: PLR6301
-        """Whether a Flask request context is currently active.
+    def has_request_context(self) -> bool:
+        """Whether a request context is currently active.
 
         Returns:
             True if a request context is active.
         """
-        return flask.has_request_context()
+        return self._fw.has_request_context()
+
+    def url_for(self, endpoint: str, **values) -> str:
+        """Build a URL for an endpoint.
+
+        Returns:
+            The URL string for ``endpoint``.
+        """
+        return self._fw.url_for(endpoint, **values)
+
+    def redirect(self, location: str) -> Any:
+        """Build a redirect response to ``location``.
+
+        Returns:
+            A framework redirect response.
+        """
+        return self._fw.redirect(location)
+
+
+class FlaskBackend(_ContextLocalBackend):
+    """Backend adapter for a Flask server."""
+
+    _fw = flask
 
     def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
         """Register the before-request auth hook on a Flask server."""
@@ -363,27 +390,13 @@ class FlaskBackend(Backend):
             )
             return decide(flask.request.path, body)
 
-    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
-        """Build a URL for a Flask endpoint.
 
-        Returns:
-            The URL string for ``endpoint``.
-        """
-        return flask.url_for(endpoint, **values)
-
-    def redirect(self, location: str) -> Any:  # noqa: PLR6301
-        """Build a Flask redirect response to ``location``.
-
-        Returns:
-            A Flask redirect response.
-        """
-        return flask.redirect(location)
-
-
-class QuartBackend(Backend):
+class QuartBackend(_ContextLocalBackend):
     """Backend adapter for a Quart (async) server."""
 
+    _fw = quart
     is_async = True
+    oauth_extension_key = "authlib.integrations.quart_client"
 
     def __init__(self) -> None:
         """Create the Quart backend, requiring the optional ``quart`` extra.
@@ -396,35 +409,6 @@ class QuartBackend(Backend):
                 "Quart is not installed. Please install it with `pip install quart` "
                 "or `pip install dash[quart]` to use the Quart backend."
             )
-
-    @property
-    def request(self) -> Any:
-        """Quart's request context-local proxy.
-
-        Returns:
-            The Quart request proxy.
-        """
-        return quart.request
-
-    @property
-    def session(self) -> MutableMapping:
-        """Quart's session mapping.
-
-        Returns:
-            The Quart session proxy.
-        """
-        return quart.session
-
-    # The methods below are thin adapters over module-level framework
-    # functions; they must stay instance methods to satisfy the Backend
-    # interface, so PLR6301 (no-self-use) is suppressed on each.
-    def has_request_context(self) -> bool:  # noqa: PLR6301
-        """Whether a Quart request context is currently active.
-
-        Returns:
-            True if a request context is active.
-        """
-        return quart.has_request_context()
 
     def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
         """Register the before-request auth hook on a Quart server.
@@ -479,22 +463,6 @@ class QuartBackend(Backend):
                 )
             return response
 
-    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
-        """Build a URL for a Quart endpoint.
-
-        Returns:
-            The URL string for ``endpoint``.
-        """
-        return quart.url_for(endpoint, **values)
-
-    def redirect(self, location: str) -> Any:  # noqa: PLR6301
-        """Build a Quart redirect response to ``location``.
-
-        Returns:
-            A Quart redirect response.
-        """
-        return quart.redirect(location)
-
     def make_oauth(self, server) -> Any:  # noqa: PLR6301
         """Build the authlib OAuth registry for the Quart backend.
 
@@ -505,16 +473,6 @@ class QuartBackend(Backend):
         from dash_auth_async import quart_client  # noqa: PLC0415
 
         return quart_client.OAuth(server)
-
-    def get_oauth(self, server) -> Any:  # noqa: PLR6301
-        """Retrieve the Quart OAuth registry stored by :meth:`make_oauth`.
-
-        Returns:
-            The registry, or None if ``OIDCAuth`` has not run yet.
-        """
-        return getattr(server, "extensions", {}).get(
-            "authlib.integrations.quart_client"
-        )
 
     async def oauth_authorize_redirect(  # noqa: PLR6301
         self, client, redirect_uri: str, **kwargs
