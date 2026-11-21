@@ -63,24 +63,31 @@ include = ["dash_auth_async*"]
 dash_auth_async = ["py.typed"]
 
 [dependency-groups]
+# Test tools that work on every Dash version in the CI matrix; tests.yml
+# installs exactly this group, so add new test-only deps here.
+test = [
+    "pytest>=8.3.5",
+    "pytest-cov>=7.1.0",
+    "websocket-client>=1.9.0",
+    "hypothesis>=6.170.17",
+    "dash-auth>=2.3.0",
+]
 dev = [
+    {include-group = "test"},
     "asgiref>=3.11.1",
     "creosote>=5.2.0",
     "dash[testing,diskcache]>=4.2.0",
     "setuptools>=79.0.1",
     "ty==0.0.51",
     "pre-commit>=3.5.0",
-    "pytest>=8.3.5",
     "ruff==0.15.18",
-    "pytest-cov>=7.1.0",
-    "websocket-client>=1.9.0",
     "requests[security]>=2.34.2",
     "fastapi",
     "starlette",
     "uvicorn",
     "httpx>=0.23.0",
     "itsdangerous",
-    "python-multipart"
+    "python-multipart",
 ]
 
 [tool.uv]
