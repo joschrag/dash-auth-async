@@ -84,9 +84,14 @@ def list_groups(
 
     user_groups = user.get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
-    # may depend on OIDC provider
-    if isinstance(user_groups, str) and groups_str_split is not None:
-        user_groups = re.split(groups_str_split, user_groups)
+    # may depend on OIDC provider. Without a split, a string is ONE group:
+    # returning it bare would make `in`/set() match substrings and characters.
+    if isinstance(user_groups, str):
+        user_groups = (
+            re.split(groups_str_split, user_groups)
+            if groups_str_split is not None
+            else [user_groups]
+        )
     return user_groups
 
 
@@ -117,7 +122,6 @@ def check_groups(
         groups_key=groups_key,
         groups_str_split=groups_str_split,
     )
-
     if user_groups is None:
         # User is not authenticated
         return None
