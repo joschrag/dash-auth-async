@@ -12,6 +12,7 @@ from dash import Dash, Input, Output, State
 
 from dash_auth_async.auth import Auth
 from dash_auth_async.backends import Backend
+from dash_auth_async.group_protection import DISPATCH_GATES
 from dash_auth_async.public_routes import PUBLIC_CALLBACKS
 
 LOGIN = "login-sentinel"
@@ -101,9 +102,9 @@ def _app_with_callbacks():
     @app.callback(
         Output("page", "children"),
         Input("url", "pathname"),
-        State("store", "data"),
+        State("url", "search"),
     )
-    def route(pathname, data):
+    def route(pathname, search):
         return pathname
 
     @app.callback(
@@ -121,7 +122,7 @@ def _routing_body(pathname):
     return {
         "output": "page.children",
         "inputs": [{"id": "url", "property": "pathname", "value": pathname}],
-        "state": [{"id": "store", "property": "data", "value": None}],
+        "state": [{"id": "url", "property": "search", "value": ""}],
     }
 
 
@@ -187,6 +188,96 @@ def test_routing_pathname_is_read_at_the_registered_position():
         "state": [],
     }
     assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [Input("dropdown", "value"), State("store", "data")],
+    ids=["extra-input", "extra-state"],
+)
+def test_routing_callback_with_non_url_args_is_not_public(extra):
+    """Review #1a: a public pathname made the whole callback public, so an
+    anonymous caller chose every other input freely."""
+    app = Dash(__name__)
+
+    @app.callback(Output("leak", "children"), Input("url", "pathname"), extra)
+    def leak(pathname, other):
+        return other
+
+    auth = StubAuth(app, authorized=False, public_routes=["/home"])
+    key = "inputs" if isinstance(extra, Input) else "state"
+    body = {
+        "output": "leak.children",
+        "inputs": [{"id": "url", "property": "pathname", "value": "/home"}],
+        "state": [],
+    }
+    body[key] = [
+        *body[key],
+        {"id": extra.component_id, "property": extra.component_property, "value": "x"},
+    ]
+    assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+    assert auth.authorize_ws(body, None) is False
+
+
+def test_pages_router_with_routing_callback_inputs_stays_public():
+    """Dash's pages router keeps its app.routing_callback_inputs extras public:
+    they only feed the (public) page's layout."""
+    app = Dash(__name__)
+
+    # Same outputs, hence the same callback id, as Dash's own pages router.
+    @app.callback(
+        Output("_pages_content", "children"),
+        Output("_pages_store", "data"),
+        Input("_pages_location", "pathname"),
+        Input("_pages_location", "search"),
+        State("lang", "data"),
+    )
+    def update(pathname, search, lang):
+        return pathname, {}
+
+    auth = StubAuth(app, authorized=False, public_routes=["/home"])
+    body = {
+        "output": ".._pages_content.children..._pages_store.data..",
+        "inputs": [
+            {"id": "_pages_location", "property": "pathname", "value": "/home"},
+            {"id": "_pages_location", "property": "search", "value": ""},
+        ],
+        "state": [{"id": "lang", "property": "data", "value": "de"}],
+    }
+    assert authorize(auth, CALLBACK_PATH, body) is None
+    body["inputs"][0]["value"] = "/private"
+    assert authorize(auth, CALLBACK_PATH, body) == LOGIN
+
+
+@pytest.mark.parametrize(
+    ("pathname", "allowed"),
+    [("/reports/2024", True), ("/reports/2024%2Fsecret", False)],
+)
+def test_percent_encoded_pathname_must_match_decoded(pathname, allowed):
+    """Review #1c: "/reports/2024%2Fsecret" matched the public "/reports/<id>",
+    but the pages router renders the decoded, protected "/reports/2024/secret"."""
+    auth = StubAuth(
+        _app_with_callbacks(), authorized=False, public_routes=["/reports/<id>"]
+    )
+    expected = None if allowed else LOGIN
+    assert authorize(auth, CALLBACK_PATH, _routing_body(pathname)) == expected
+    assert auth.authorize_ws(_routing_body(pathname), None) is allowed
+
+
+def test_public_routing_callback_still_runs_the_dispatch_gate():
+    """Review #1b: the routing early return skipped dispatch_gate_response, so
+    a group-protected background routing callback started for anyone."""
+    app = _app_with_callbacks()
+    auth = StubAuth(app, authorized=False, public_routes=["/home"])
+    # A denying gate for the routing callback, as protected_callback stores it.
+    app.server.config[DISPATCH_GATES] = {
+        "page.children": (lambda: "denied", Output("page", "children"))
+    }
+    body = {**_routing_body("/home"), "outputs": {"id": "page", "property": "children"}}
+    response = authorize(auth, CALLBACK_PATH, body)
+    assert response is not None
+    assert "denied" in response[0]
+    assert auth.authorize_ws(body, None) is False
 
 
 def test_unregistered_callback_with_public_pathname_returns_login_request():
