@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   ```
 
 ### Fixed
+- Under a mount or proxy prefix (`requests_pathname_prefix="/app/"`), `OIDCAuth` now sends users back to `/app/` after login, and the logout page's "Go back" link points there too. Before, both used the server-side routes prefix (`/`), which sent users to the site root, outside the app
 - `public_callback` now works with dict outputs and inputs (`output=dict(...)`, `inputs=dict(...)`). Before, it raised `AttributeError` when the module was imported, after Dash had already registered the callback
 
 ### Security

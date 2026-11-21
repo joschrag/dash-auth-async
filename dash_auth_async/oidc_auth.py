@@ -14,7 +14,6 @@ from flask import Response
 from werkzeug.routing import Map, Rule
 
 from dash_auth_async.auth import Auth
-from dash_auth_async.public_routes import get_url_base
 
 from .backends import Backend, detect_backend
 from .stream_revocation import (
@@ -351,7 +350,9 @@ class OIDCAuth(Auth):
         # captured at dispatch, so mark the session id revoked for them to see.
         revoke_session_streams(self.app, self.session.get(SESSION_ID_KEY))
         self.session.clear()
-        base_url = get_url_base(self.app) or "/"
+        # Browser-facing link: the prefix the browser requests (e.g. "/app/"
+        # under a mount), not the server-side routes prefix.
+        base_url = self.app.config.requests_pathname_prefix
         page = (
             self.logout_page
             or f"""
@@ -446,7 +447,7 @@ class OIDCAuth(Auth):
             if self.log_signins:
                 logging.info("User %s is logging in.", user.get("email"))
 
-        return self.backend.redirect(get_url_base(self.app) or "/")
+        return self.backend.redirect(self.app.config.requests_pathname_prefix)
 
     def is_authorized(self):  # pylint: disable=C0116
         """Check whether the user is authenticated.
