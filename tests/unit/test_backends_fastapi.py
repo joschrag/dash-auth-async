@@ -142,12 +142,12 @@ def test_fastapi_backend_url_for_and_redirect():
     assert data["host"]  # non-empty netloc
 
 
-def _build_app_with_auth(decide, needs_body):
+def _build_app_with_auth(decide, needs_body, **fastapi_kwargs):
     """A FastAPI app whose only middleware is the auth hook, plus an echo
     route that proves the body survives middleware body-consumption."""
     from fastapi import FastAPI
 
-    app = FastAPI()
+    app = FastAPI(**fastapi_kwargs)
     backend = FastAPIBackend()
 
     @app.post("/_dash-update-component")
@@ -427,3 +427,65 @@ def test_user_session_middleware_installed_before_auth_is_readable():
     response = TestClient(app.server).get("/", follow_redirects=False)
     assert response.status_code == 302
     assert response.headers["location"].startswith("https://idp.example/auth")
+
+
+@pytest.mark.filterwarnings("ignore:The `root_path` parameter is deprecated")
+@pytest.mark.parametrize(
+    ("deployment", "url"),
+    [
+        # Starlette/FastAPI sub-app: path keeps "/app", root_path="/app".
+        ("mount", "/app/_dash-update-component"),
+        # FastAPI(root_path=...) hit directly, and behind a prefix-stripping proxy.
+        ("fastapi_root_path", "/app/_dash-update-component"),
+        ("fastapi_root_path", "/_dash-update-component"),
+        # Server root path (uvicorn --root-path): uvicorn >= 0.26 prepends it to
+        # the path; older servers and stripping proxies leave the path bare.
+        ("server_root_path", "/app/_dash-update-component"),
+        ("server_root_path", "/_dash-update-component"),
+    ],
+)
+def test_auth_hook_sees_app_relative_path_under_a_prefix(deployment, url):
+    # Review #4: under a prefix the path kept it, so the callback route never
+    # matched (background group gate skipped, OIDC login looped).
+    from fastapi.testclient import TestClient
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    calls = []
+
+    def decide(path, body):
+        calls.append((path, body))
+
+    def needs_body(path):
+        return path == "/_dash-update-component"
+
+    if deployment == "mount":
+        inner = _build_app_with_auth(decide, needs_body)
+        client = TestClient(Starlette(routes=[Mount("/app", app=inner)]))
+    elif deployment == "fastapi_root_path":
+        client = TestClient(_build_app_with_auth(decide, needs_body, root_path="/app"))
+    else:
+        client = TestClient(_build_app_with_auth(decide, needs_body), root_path="/app")
+
+    body = {"output": "x", "inputs": []}
+    assert client.post(url, json=body).status_code == 200
+    assert calls == [("/_dash-update-component", body)]
+
+
+@pytest.mark.parametrize(
+    ("path", "root_path", "expected"),
+    [
+        ("/app/login", "/app", "/login"),
+        ("/app", "/app", "/"),
+        ("/application/x", "/app", "/application/x"),
+        ("/login", "", "/login"),
+    ],
+)
+def test_current_path_strips_the_mount_prefix(path, root_path, expected):
+    req = _bare_request(path)
+    req.scope["root_path"] = root_path
+    token = _current_request_var.set(req)
+    try:
+        assert FastAPIBackend().current_path() == expected
+    finally:
+        _current_request_var.reset(token)
