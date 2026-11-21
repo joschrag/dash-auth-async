@@ -121,10 +121,13 @@ def check_groups(
         groups_key=groups_key,
         groups_str_split=groups_str_split,
     )
-
     if user_groups is None:
         # User is not authenticated
         return None
+    # list_groups returns an unsplit string as-is (kept for 1.x callers); it is
+    # ONE group, or `in`/set() would match substrings and single characters.
+    if isinstance(user_groups, str):
+        user_groups = [user_groups]
 
     if groups is None:
         return True

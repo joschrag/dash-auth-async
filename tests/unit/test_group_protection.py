@@ -16,6 +16,20 @@ def test_gp001_list_groups():
         assert list_groups(groups_key="tenant", groups_str_split=",") == ["ABC"]
 
 
+def test_gp_string_groups_without_split_are_one_group():
+    # Review #5: a bare string used to reach `in`/set(), so "admin" matched
+    # "superadmin" (substring) and one_of compared single characters.
+    app = Flask(__name__)
+    app.secret_key = "Test!"
+    with app.test_request_context("/", method="GET"):
+        session["user"] = {"email": "a.b@mail.com", "role": "superadmin"}
+        assert list_groups(groups_key="role") == "superadmin"  # unchanged in 1.x
+        assert check_groups(["admin"], groups_key="role", check_type="all_of") is False
+        assert check_groups(["s"], groups_key="role") is False
+        assert check_groups(["admin"], groups_key="role", check_type="none_of") is True
+        assert check_groups(["superadmin"], groups_key="role") is True
+
+
 def test_gp002_check_groups():
     app = Flask(__name__)
     app.secret_key = "Test!"
