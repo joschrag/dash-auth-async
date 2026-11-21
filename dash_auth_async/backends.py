@@ -96,6 +96,23 @@ def _set_dash_request(request: Any) -> Any:
     return set_current_request(request)
 
 
+def _route_path(scope: dict) -> str:
+    """App-relative path of an ASGI request, without any mount prefix.
+
+    Under a Starlette ``Mount`` (or ``root_path``) ``scope["path"]`` still
+    carries the prefix, which Flask's ``request.path`` never does. Mirrors
+    Dash's ``_is_dash_route`` so auth and Dash agree on which route this is.
+
+    Returns:
+        The path relative to the app root, ``"/"`` for the root itself.
+    """
+    path = scope["path"]
+    root_path = scope.get("root_path", "")
+    if root_path and (path == root_path or path.startswith(root_path + "/")):
+        path = path[len(root_path) :] or "/"
+    return path
+
+
 def _reset_dash_request(token: Any) -> None:
     """Reset the Dash request ContextVar set by :func:`_set_dash_request`.
 
@@ -634,9 +651,9 @@ class FastAPIBackend(Backend):
         """Path of the active Starlette request.
 
         Returns:
-            The request path string.
+            The request path, relative to any mount prefix.
         """
-        return self.request.url.path
+        return _route_path(self.request.scope)
 
     def coerce_response(self, result: Any) -> Any:  # noqa: PLR6301
         """Build a Starlette response from an ``_authorize``/view return value.
@@ -855,7 +872,8 @@ class FastAPIBackend(Backend):
                 try:
                     body = None
                     downstream_receive = receive
-                    if needs_body(request.url.path):
+                    path = _route_path(scope)
+                    if needs_body(path):
                         # Consuming the body drains the receive stream; cache
                         # the bytes and replay them so DashMiddleware (inner)
                         # can re-parse the callback JSON.
@@ -885,7 +903,7 @@ class FastAPIBackend(Backend):
                             raw, request.headers.get("content-encoding", "")
                         )
 
-                    result = decide(request.url.path, body)
+                    result = decide(path, body)
                     if inspect.isawaitable(result):
                         result = await result
 
