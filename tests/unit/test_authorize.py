@@ -204,6 +204,27 @@ def test_private_callback_unauthorized_returns_login_request():
     assert authorize(auth, CALLBACK_PATH, body) == LOGIN
 
 
+@pytest.mark.parametrize(
+    ("url_base", "public_route"),
+    [("/", "/<page>"), ("/app/", "/<page>"), ("/", "/<path:p>")],
+)
+def test_catch_all_public_route_does_not_make_callbacks_public(url_base, public_route):
+    """Review #2: the callback endpoint is never itself a public route.
+
+    A catch-all public rule matched ``/_dash-update-component``, so every
+    callback ran for anonymous users.
+    """
+    auth = StubAuth(
+        Dash(__name__, url_base_pathname=url_base),
+        authorized=False,
+        public_routes=[public_route],
+    )
+    body = {"output": "output.children", "inputs": []}
+    assert authorize(auth, auth._callback_path(), body) == LOGIN
+    # The rule itself still makes ordinary pages public.
+    assert authorize(auth, f"{url_base}home") is None
+
+
 def test_callback_body_without_inputs_key_does_not_crash():
     """A truthy body lacking the 'inputs' key must fail closed, not 500.
 

@@ -130,14 +130,14 @@ class Auth(ABC):
             if self._is_public_routing_callback(body):
                 return None
 
-        # If the route is not a callback route, check whether the path
-        # matches a public route, or whether the request is authorised
-        if public_routes.test(path) or self.is_authorized():
-            if path == self._callback_path():
-                # Group-protected background callbacks are gated here, not in
-                # their job process (which has no session to read).
-                return dispatch_gate_response(self.app, body)
-            return None
+        # Public routes apply to non-callback paths only: a catch-all rule
+        # like "/<page>" would otherwise match the callback endpoint itself
+        # and make every callback public.
+        is_callback = path == self._callback_path()
+        if (not is_callback and public_routes.test(path)) or self.is_authorized():
+            # Group-protected background callbacks are gated here, not in
+            # their job process (which has no session to read).
+            return dispatch_gate_response(self.app, body) if is_callback else None
 
         # Otherwise, ask the user to log in
         return self.login_request()
