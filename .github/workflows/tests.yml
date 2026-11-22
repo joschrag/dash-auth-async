@@ -9,25 +9,37 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a PR supersedes its running checks; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A hung browser test otherwise holds the runner for GitHub's 6-hour default.
+    timeout-minutes: 20
+    # Locked compiled deps (pydantic-core, lxml, ...) may lack 3.15 wheels and
+    # build from source; don't block on 3.15 until Dependabot bumps them.
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         # Explicitly carve out the "Early Dash 4" dead-zone
-        dash-constraint: ["dash[testing]>=3,<4", "dash[testing]>=4,<4.2.0", "dash[testing,diskcache]>=4.2.0"]
+        dash-constraint: ["dash[testing,diskcache]>=3,<4", "dash[testing,diskcache]>=4,<4.2.0", "dash[testing,diskcache]>=4.2.0"]
         include:
-          - dash-constraint: "dash[testing]>=3,<4"
+          - dash-constraint: "dash[testing,diskcache]>=3,<4"
             extra-flags: ".[oidc,async]"
-          - dash-constraint: "dash[testing]>=4,<4.2.0"
+          - dash-constraint: "dash[testing,diskcache]>=4,<4.2.0"
             extra-flags: ".[oidc,async]" # No async extras yet!
           - dash-constraint: "dash[testing,diskcache]>=4.2.0"
             extra-flags: ".[oidc,fastapi,quart,async]"
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -37,21 +49,34 @@ jobs:
         with:
           chrome-version: "stable"
 
-      # This now cleanly maps to the version of Dash being forced
+      # Pin every dependency except dash to uv.lock, so CI tests what the lock
+      # ships; dash itself floats within each matrix row's range.
       - name: Install
         run: |
-          pip install \
-            "${{ matrix.dash-constraint }}" \
-            -e "${{ matrix.extra-flags }}" \
-            pytest websocket-client
+          uv export --frozen --no-hashes --all-extras --group dev             --no-emit-project --no-emit-package dash -o constraints.txt
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             pytest pytest-cov websocket-client
 
+      # Coverage only on the uploading rows: on 3.11 the tracer deadlocks the
+      # thread-kill teardown of Dash's threaded test server.
       - name: Test
-        run: pytest --headless
+        run: uv run --no-sync pytest --headless ${{ matrix.python-version == '3.13' && '--cov=dash_auth_async --cov-report=xml' || '' }}
+
+      # One upload per Dash row: older-Dash rows lack the quart/fastapi extras,
+      # so they cover the import-fallback branches the coverage job cannot reach.
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -62,14 +87,10 @@ jobs:
           chrome-version: "stable"
 
       - name: Install
-        run: |
-          pip install \
-            "dash[testing,diskcache]>=4.2.0" \
-            -e ".[oidc,fastapi,quart,async]" \
-            pytest pytest-cov websocket-client
+        run: uv sync --frozen --group dev --all-extras
 
       - name: Test with coverage
-        run: pytest --headless --cov=dash_auth_async --cov-report=xml
+        run: uv run --no-sync pytest --headless --cov=dash_auth_async --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
