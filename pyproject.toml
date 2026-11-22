@@ -156,3 +156,7 @@ combine-as-imports = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.coverage.run]
+# Measure subprocesses too: the no-authlib test needs a fresh interpreter.
+patch = ["subprocess"]
