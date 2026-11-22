@@ -1,5 +1,9 @@
 name: Lint
 
+# Read-only token: these jobs only check out code; Codecov uses its own token.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
