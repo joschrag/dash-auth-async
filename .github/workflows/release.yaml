@@ -1,9 +1,11 @@
 name: Release
 
+# 1.x maintenance releases (security fixes until 2027-05-22, see SECURITY.md)
+# publish from this branch; 2.x releases publish from main.
 on:
   push:
     branches:
-      - main
+      - 1.x
 
 permissions:
   contents: read
@@ -63,3 +65,14 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      # --latest=false: the "Latest" release stays on 2.x (published from main).
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          VER="${TAG#v}"
+          # Curated notes = this version's CHANGELOG section; --generate-notes appends the merged-PR list.
+          awk -v v="$VER" '/^## \[/{p = index($0, "[" v "]") > 0; next} p' CHANGELOG.md > notes.md
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --generate-notes --latest=false
