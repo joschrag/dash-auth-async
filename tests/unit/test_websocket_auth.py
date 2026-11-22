@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -399,3 +400,15 @@ def test_quart_and_fastapi_mint_the_same_client_cookie(monkeypatch):
     expected = websocket_auth.ws_client_cookie_header("fixed-id")
     assert quart_resp.headers.get_all("Set-Cookie") == [expected]
     assert fastapi_resp.headers.get_list("set-cookie") == [expected]
+
+
+def test_connect_hook_logs_and_allows_when_tracking_fails(monkeypatch, caplog):
+    from dash_auth_async import websocket_auth
+
+    def fail(_ws):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(websocket_auth, "_track_ws", fail)
+    with caplog.at_level(logging.ERROR, logger=websocket_auth.__name__):
+        assert websocket_auth._ws_connect_hook(object()) is True
+    assert "Failed to track websocket" in caplog.text

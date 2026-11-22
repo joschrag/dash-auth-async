@@ -106,3 +106,9 @@ def test_public_api_exports_base_classes_and_backends():
     assert dash_auth_async.FastAPIBackend is backends.FastAPIBackend
     assert dash_auth_async.get_url_base is public_routes.get_url_base
     assert all(hasattr(dash_auth_async, name) for name in dash_auth_async.__all__)
+
+
+def test_quart_backend_without_quart_raises(monkeypatch):
+    monkeypatch.setattr(backends, "HAS_QUART", False)
+    with pytest.raises(ImportError, match="pip install quart"):
+        backends.QuartBackend()
