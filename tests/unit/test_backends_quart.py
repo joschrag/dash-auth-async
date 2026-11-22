@@ -39,9 +39,7 @@ def test_quart_backend_url_for_and_redirect():
     backend = QuartBackend()
 
     async def run():
-        # quart annotates __aexit__ args without Optional, violating the
-        # protocol on clean exit; works at runtime.
-        async with app.test_request_context("/", method="GET"):  # ty: ignore[invalid-context-manager]
+        async with app.test_request_context("/", method="GET"):
             assert backend.url_for("target") == "/target"
             response = backend.redirect("/target")
             assert response.status_code == 302

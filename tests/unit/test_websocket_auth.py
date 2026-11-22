@@ -412,3 +412,95 @@ def test_connect_hook_logs_and_allows_when_tracking_fails(monkeypatch, caplog):
     with caplog.at_level(logging.ERROR, logger=websocket_auth.__name__):
         assert websocket_auth._ws_connect_hook(object()) is True
     assert "Failed to track websocket" in caplog.text
+
+
+class _DenyingAuth(_RecordingAuth):
+    def authorize_ws(self, payload, user) -> bool:
+        super().authorize_ws(payload, user)
+        return False
+
+
+class _StubBackend:
+    """Resolves every socket to ``server`` with no session user."""
+
+    def __init__(self, server, *, fail: bool = False) -> None:
+        self.server, self.fail = server, fail
+
+    def ws_identity(self, _ws):
+        if self.fail:
+            raise RuntimeError("identity lookup broke")
+        return self.server, None
+
+
+@pytest.mark.parametrize("fail", [False, True], ids=["denied", "error"])
+def test_ws_hook_rejects_with_exact_4401(monkeypatch, fail):
+    """The client keys its reconnect-after-login on this exact close frame, so
+    both the denial and the fail-closed error path must send it verbatim, and
+    neither may stash a user for the worker.
+    """
+    from dash_auth_async import websocket_auth
+    from dash_auth_async.websocket_auth import _AUTH_BY_SERVER, _ws_message_hook
+
+    server = _Server()
+    _AUTH_BY_SERVER[server] = _DenyingAuth()
+    monkeypatch.setattr(
+        websocket_auth, "get_active_backend", lambda: _StubBackend(server, fail=fail)
+    )
+    token = _WS_AUTH_USER.set(None)
+    try:
+        message = {"type": "callback_request", "payload": {"output": "x.children"}}
+        assert _ws_message_hook(object(), message) == (4401, "Unauthorized")
+        assert _WS_AUTH_USER.get() is None
+    finally:
+        _WS_AUTH_USER.reset(token)
+        del _AUTH_BY_SERVER[server]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [{"type": "something_else"}, "not a dict"],
+    ids=["other-type", "non-dict"],
+)
+def test_ws_hook_passes_non_callback_messages_through(monkeypatch, message):
+    """Only callback_request is judged; anything else must not close the socket
+    (nor even reach the auth decision).
+    """
+    from dash_auth_async import websocket_auth
+    from dash_auth_async.websocket_auth import _ws_message_hook
+
+    def _must_not_run(*_a):
+        raise AssertionError("non-callback message reached the auth decision")
+
+    monkeypatch.setattr(websocket_auth, "_authorize_ws_message", _must_not_run)
+    assert _ws_message_hook(object(), message) is True
+
+
+def test_ws_hook_allows_apps_without_auth(monkeypatch):
+    """The hook is process-global: an app that never called Auth(...) must keep
+    working when another app in the process is protected.
+    """
+    from dash_auth_async import websocket_auth
+    from dash_auth_async.websocket_auth import _ws_message_hook
+
+    unprotected = _Server()  # never added to _AUTH_BY_SERVER
+    monkeypatch.setattr(
+        websocket_auth, "get_active_backend", lambda: _StubBackend(unprotected)
+    )
+    message = {"type": "callback_request", "payload": {"output": "x.children"}}
+    assert _ws_message_hook(object(), message) is True
+
+
+def test_ws_connect_hook_allows_and_logs_when_tracking_fails(monkeypatch, caplog):
+    """Bookkeeping must never reject a handshake (public pages use anonymous
+    sockets), but a socket logout can't close must not fail silently.
+    """
+    from dash_auth_async import websocket_auth
+    from dash_auth_async.websocket_auth import _ws_connect_hook
+
+    def _broken_track(_ws):
+        raise RuntimeError("registry broke")
+
+    monkeypatch.setattr(websocket_auth, "_track_ws", _broken_track)
+    with caplog.at_level("ERROR", logger=websocket_auth.__name__):
+        assert _ws_connect_hook(object()) is True
+    assert "logout will not close it" in caplog.text

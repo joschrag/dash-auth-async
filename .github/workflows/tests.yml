@@ -55,7 +55,7 @@ jobs:
         run: |
           uv export --frozen --no-hashes --all-extras --group dev             --no-emit-project --no-emit-package dash -o constraints.txt
           uv venv --python ${{ matrix.python-version }}
-          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             pytest pytest-cov websocket-client
+          uv pip install -c constraints.txt             "${{ matrix.dash-constraint }}"             -e "${{ matrix.extra-flags }}"             --group test
 
       # Coverage only on the uploading rows: on 3.11 the tracer deadlocks the
       # thread-kill teardown of Dash's threaded test server.
