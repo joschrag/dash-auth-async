@@ -1,5 +1,6 @@
 """OpenID Connect authentication for Dash on Flask and Quart backends."""
 
+import inspect
 import logging
 import os
 import re
@@ -304,19 +305,7 @@ class OIDCAuth(Auth):
         if self.backend.is_async:
             # Returns a coroutine; the async before-request hook / route awaits it.
             return self._login_request_async(idp)
-
-        idp, response = self._resolve_idp(idp)
-        if response is not None:
-            return response
-
-        redirect_uri = self._create_redirect_uri(idp)
-        oauth_client = self.get_oauth_client(idp)
-        oauth_kwargs = self.get_oauth_kwargs(idp)
-        return self.backend.oauth_authorize_redirect(
-            oauth_client,
-            redirect_uri,
-            **oauth_kwargs.get("authorize_redirect_kwargs", {}),
-        )
+        return self._start_login(idp)
 
     async def _login_request_async(self, idp: str | None = None):
         """Async login view shared by the Quart and FastAPI paths.
@@ -327,19 +316,27 @@ class OIDCAuth(Auth):
         Returns:
             The authorize-redirect response.
         """
+        result = self._start_login(idp)
+        if inspect.isawaitable(result):
+            result = await result
+        return self.backend.coerce_response(result)
+
+    def _start_login(self, idp: str | None):
+        """Login body shared by the sync and async views.
+
+        Returns:
+            The idp-selection response, or the backend's authorize-redirect
+            (a coroutine on async backends, for the caller to await).
+        """
         idp, response = self._resolve_idp(idp)
         if response is not None:
-            return self.backend.coerce_response(response)
-
-        redirect_uri = self._create_redirect_uri(idp)
-        oauth_client = self.get_oauth_client(idp)
+            return response
         oauth_kwargs = self.get_oauth_kwargs(idp)
-        result = await self.backend.oauth_authorize_redirect(
-            oauth_client,
-            redirect_uri,
+        return self.backend.oauth_authorize_redirect(
+            self.get_oauth_client(idp),
+            self._create_redirect_uri(idp),
             **oauth_kwargs.get("authorize_redirect_kwargs", {}),
         )
-        return self.backend.coerce_response(result)
 
     def logout(self):  # pylint: disable=C0116
         """Logout the user.
@@ -384,23 +381,13 @@ class OIDCAuth(Auth):
         Returns:
             The post-login redirect, or an error tuple on failure.
         """
-        # `idp` and the IdP error text are request-controlled and Flask/Quart
-        # render a returned str as text/html: escape them (reflected XSS).
         if idp not in self.oauth._registry:
-            return f"'{escape(idp)}' is not a valid registered idp", 400
-
-        oauth_client = self.get_oauth_client(idp)
-        oauth_kwargs = self.get_oauth_kwargs(idp)
+            return _unknown_idp(idp)
         try:
-            token = self.backend.oauth_authorize_access_token(
-                oauth_client,
-                **oauth_kwargs.get("authorize_token_kwargs", {}),
-            )
+            token = self._exchange_token(idp)
         except OAuthError as err:
-            return escape(str(err)), 401
-
-        user = token.get("userinfo")
-        return self.after_logged_in(user, idp, token)
+            return _oauth_error(err)
+        return self.after_logged_in(token.get("userinfo"), idp, token)
 
     async def _callback_async(self, idp: str):
         """Async OIDC callback view shared by the Quart and FastAPI paths.
@@ -412,22 +399,26 @@ class OIDCAuth(Auth):
             The post-login redirect, or an error response on failure.
         """
         if idp not in self.oauth._registry:
-            return self.backend.coerce_response(
-                (f"'{escape(idp)}' is not a valid registered idp", 400)
-            )
-
-        oauth_client = self.get_oauth_client(idp)
-        oauth_kwargs = self.get_oauth_kwargs(idp)
+            return self.backend.coerce_response(_unknown_idp(idp))
         try:
-            token = await self.backend.oauth_authorize_access_token(
-                oauth_client,
-                **oauth_kwargs.get("authorize_token_kwargs", {}),
-            )
+            token = await self._exchange_token(idp)
         except OAuthError as err:
-            return self.backend.coerce_response((escape(str(err)), 401))
+            return self.backend.coerce_response(_oauth_error(err))
+        return self.backend.coerce_response(
+            self.after_logged_in(token.get("userinfo"), idp, token)
+        )
 
-        user = token.get("userinfo")
-        return self.backend.coerce_response(self.after_logged_in(user, idp, token))
+    def _exchange_token(self, idp: str):
+        """Token exchange shared by the sync and async callback views.
+
+        Returns:
+            The token (a coroutine on async backends, for the caller to await).
+        """
+        oauth_kwargs = self.get_oauth_kwargs(idp)
+        return self.backend.oauth_authorize_access_token(
+            self.get_oauth_client(idp),
+            **oauth_kwargs.get("authorize_token_kwargs", {}),
+        )
 
     def after_logged_in(self, user: dict | None, idp: str, token: dict):
         """Run post-login actions after successful OIDC authentication.
@@ -471,6 +462,16 @@ class OIDCAuth(Auth):
         # override that skips super()) get one here, so logout can revoke them.
         ensure_session_id(self.session)
         return True
+
+
+# `idp` and the IdP error text are request-controlled and Flask/Quart render a
+# returned str as text/html: escape them (reflected XSS).
+def _unknown_idp(idp: str) -> tuple[str, int]:
+    return f"'{escape(idp)}' is not a valid registered idp", 400
+
+
+def _oauth_error(err: OAuthError) -> tuple[str, int]:
+    return escape(str(err)), 401
 
 
 def get_oauth(app: dash.Dash | None = None) -> "OAuth | QuartOAuth":

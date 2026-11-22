@@ -9,7 +9,9 @@ upgrade to one file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
+import logging
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +20,8 @@ from typing import Any
 from weakref import WeakKeyDictionary
 
 from .backends import get_active_backend
+
+logger = logging.getLogger(__name__)
 
 # Name of the pre-login, browser-stable cookie that ties an anonymous WebSocket
 # back to the browser that later authenticates over HTTP. Minted on first
@@ -97,6 +101,15 @@ def mint_ws_client_id() -> str:
     return secrets.token_urlsafe(16)
 
 
+def ws_client_cookie_header(client_id: str) -> str:
+    """``Set-Cookie`` value for the client-id cookie, shared by every backend.
+
+    Returns:
+        The header value (HttpOnly, SameSite=Lax, site-wide path).
+    """
+    return f"{WS_CLIENT_COOKIE}={client_id}; Path=/; HttpOnly; SameSite=Lax"
+
+
 def _register_ws(
     registry: dict[str, _WSEntry], client_id: str | None, ws: Any, loop: Any
 ) -> None:
@@ -129,24 +142,6 @@ def _close_ws(registry: dict[str, _WSEntry], client_id: str | None) -> None:
     if entry is None:
         return
     _schedule_ws_close(entry.loop, entry.ws)
-
-
-def register_anonymous_ws(client_id: str | None, ws: Any, loop: Any) -> None:
-    """Track a browser's current pre-login socket, replacing any stale prior.
-
-    No-op without a (plausible) client id (e.g. a backend that never minted the
-    cookie): such a socket can't be correlated to a later login and falls back
-    to the reactive 4401-then-reconnect path. The registry is capped at
-    ``_MAX_TRACKED_WS`` entries, evicting the oldest first.
-    """
-    if not client_id or len(client_id) > _MAX_CLIENT_ID_LEN:
-        return
-    with _ws_registry_lock:
-        # Pop first so a reconnect re-enters as the newest entry.
-        _WS_BY_CLIENT.pop(client_id, None)
-        while len(_WS_BY_CLIENT) >= _MAX_TRACKED_WS:
-            del _WS_BY_CLIENT[next(iter(_WS_BY_CLIENT))]
-        _WS_BY_CLIENT[client_id] = _WSEntry(ws, loop)
 
 
 def close_anonymous_ws(client_id: str | None) -> None:
@@ -183,15 +178,13 @@ def _schedule_ws_close(loop: Any, ws: Any) -> None:
     """
 
     async def _safe_close() -> None:
-        try:
+        # Already closing/closed -- nothing to recover.
+        with contextlib.suppress(Exception):
             await ws.close(code=4408)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass  # already closing/closed -- nothing to recover
 
-    try:
+    # Loop gone (socket already torn down) -- nothing to close.
+    with contextlib.suppress(Exception):
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_safe_close()))
-    except Exception:  # pylint: disable=broad-exception-caught
-        pass  # loop gone (socket already torn down) -- nothing to close
 
 
 def _ws_message_hook(ws: Any, message: Any):
@@ -269,13 +262,15 @@ def _ws_connect_hook(ws: Any):
         ``True`` to allow the connection (bookkeeping never blocks a socket).
     """
     try:
-        _track_anonymous_ws(ws)
+        _track_ws(ws)
     except Exception:  # pylint: disable=broad-exception-caught
-        pass  # never let bookkeeping block a connection
+        # Never let bookkeeping block a connection, but say so: an untracked
+        # socket is one logout can no longer close.
+        logger.exception("Failed to track websocket; logout will not close it")
     return True
 
 
-def _track_anonymous_ws(ws: Any) -> None:
+def _track_ws(ws: Any) -> None:
     """Register ``ws`` by browser and auth state (see ``_ws_connect_hook``)."""
     backend = get_active_backend()
     _, user = backend.ws_identity(ws)

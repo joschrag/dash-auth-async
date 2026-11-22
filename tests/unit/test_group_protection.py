@@ -63,3 +63,19 @@ def test_gp003_protected():
 
         del session["user"]
         assert f1() == "unauthenticated"
+
+
+def test_gp023_protected_gates_a_static_output():
+    # A non-callable output is gated once, when protected() is applied.
+    app = Flask(__name__)
+    app.secret_key = "Test!"
+    with app.test_request_context("/", method="GET"):
+        session["user"] = {"email": "a.b@mail.com", "groups": ["default"]}
+        allowed = protected(
+            "anon", missing_permissions_output="forbidden", groups=["default"]
+        )
+        denied = protected(
+            "anon", missing_permissions_output="forbidden", groups=["admin"]
+        )
+        assert allowed("static") == "static"
+        assert denied("static") == "forbidden"

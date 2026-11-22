@@ -336,8 +336,9 @@ def test_slo015_session_id_capture_never_raises(
     """The custom_data hook runs on every dispatch: a server without a session
     (e.g. FastAPI without SessionMiddleware) or a WS dispatch yields no id."""
     from dash_auth_async import group_protection
+    from dash_auth_async.backends import FlaskBackend
 
-    class FakeBackend:
+    class FakeBackend(FlaskBackend):
         def has_request_context(self):
             return in_request
 

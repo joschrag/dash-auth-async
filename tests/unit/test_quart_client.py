@@ -195,3 +195,29 @@ def test_oauth_create_client_without_app_raises():
     assert "idp" in oauth._registry
     with pytest.raises(RuntimeError):
         oauth.create_client("idp")
+
+
+def test_state_data_without_session_is_cached_but_not_trusted():
+    class _Cache:
+        def __init__(self):
+            self.data = {}
+
+        async def get(self, key):
+            return self.data.get(key)
+
+        async def set(self, key, value, _expires_in=None):
+            self.data[key] = value
+
+        async def delete(self, key):
+            self.data.pop(key, None)
+
+    cache = _Cache()
+    integration = QuartIntegration("idp", cache=cache)
+
+    async def run():
+        await integration.set_state_data(None, "abc", {"nonce": "n"})
+        assert "_state_idp_abc" in cache.data
+        # No session marker ties the callback to the browser that started it.
+        assert await integration.get_state_data(None, "abc") is None
+
+    asyncio.run(run())

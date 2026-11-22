@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -362,3 +363,52 @@ def test_ws_hook_resolves_auth_for_the_current_app(monkeypatch):
         _WS_AUTH_USER.reset(token)
         del _AUTH_BY_SERVER[server_a]
         del _AUTH_BY_SERVER[server_b]
+
+
+def test_quart_and_fastapi_mint_the_same_client_cookie(monkeypatch):
+    """Both backends must emit byte-identical ``dac_client`` Set-Cookie headers.
+
+    Pins the shared ``ws_client_cookie_header`` so the attributes (HttpOnly,
+    SameSite, Path) can't drift between the two hand-written emitters again.
+    """
+    import asyncio
+
+    pytest.importorskip("quart")
+    pytest.importorskip("fastapi")
+    from fastapi import FastAPI
+    from quart import Quart
+    from starlette.testclient import TestClient
+
+    from dash_auth_async import websocket_auth
+    from dash_auth_async.backends import FastAPIBackend, QuartBackend
+
+    monkeypatch.setattr(websocket_auth, "mint_ws_client_id", lambda: "fixed-id")
+
+    def allow(_path, _body):
+        return None
+
+    quart_app = Quart(__name__)
+    quart_app.route("/")(lambda: "ok")
+    QuartBackend().register_auth_hook(quart_app, lambda _p: False, allow)
+    quart_resp = asyncio.run(quart_app.test_client().get("/"))
+
+    fastapi_app = FastAPI()
+    fastapi_app.get("/")(lambda: "ok")
+    FastAPIBackend().register_auth_hook(fastapi_app, lambda _p: False, allow)
+    fastapi_resp = TestClient(fastapi_app).get("/")
+
+    expected = websocket_auth.ws_client_cookie_header("fixed-id")
+    assert quart_resp.headers.get_all("Set-Cookie") == [expected]
+    assert fastapi_resp.headers.get_list("set-cookie") == [expected]
+
+
+def test_connect_hook_logs_and_allows_when_tracking_fails(monkeypatch, caplog):
+    from dash_auth_async import websocket_auth
+
+    def fail(_ws):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(websocket_auth, "_track_ws", fail)
+    with caplog.at_level(logging.ERROR, logger=websocket_auth.__name__):
+        assert websocket_auth._ws_connect_hook(object()) is True
+    assert "Failed to track websocket" in caplog.text

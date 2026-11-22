@@ -126,6 +126,9 @@ class Backend(ABC):
     # branching on isinstance(backend, ...).
     is_async: bool = False
 
+    # ``server.extensions`` key under which make_oauth's registry registers.
+    oauth_extension_key: str = "authlib.integrations.flask_client"
+
     @abstractmethod
     def has_request_context(self) -> bool:
         """Whether a request context is currently active."""
@@ -154,6 +157,20 @@ class Backend(ABC):
     @abstractmethod
     def redirect(self, location: str) -> Any:
         """Return a redirect response to the given location."""
+
+    def session_get(self, key: str) -> Any:
+        """Read ``session[key]`` without raising.
+
+        Returns:
+            The value, or None outside a request or when the server has no
+            session configured (e.g. FastAPI without ``SessionMiddleware``).
+        """
+        if not self.has_request_context():
+            return None
+        try:
+            return self.session.get(key)
+        except RuntimeError:
+            return None
 
     # --- Operations that diverge on FastAPI; defaults reproduce the
     # --- Flask/Quart behavior so those backends inherit unchanged. These
@@ -229,7 +246,7 @@ class Backend(ABC):
 
         return OAuth(server)
 
-    def get_oauth(self, server) -> Any:  # noqa: PLR6301
+    def get_oauth(self, server) -> Any:
         """Retrieve the authlib OAuth registry stored by :meth:`make_oauth`.
 
         Symmetric with ``make_oauth``: each backend knows where it put its own
@@ -238,9 +255,7 @@ class Backend(ABC):
         Returns:
             The registry, or None if ``OIDCAuth`` has not run yet.
         """
-        return getattr(server, "extensions", {}).get(
-            "authlib.integrations.flask_client"
-        )
+        return getattr(server, "extensions", {}).get(self.oauth_extension_key)
 
     def oauth_authorize_redirect(  # noqa: PLR6301
         self, client, redirect_uri: str, **kwargs
@@ -299,40 +314,66 @@ class Backend(ABC):
         raise NotImplementedError
 
 
-class FlaskBackend(Backend):
-    """Backend adapter for a Flask server."""
+class _ContextLocalBackend(Backend):
+    """Shared adapter for frameworks with Flask-style context-local globals.
+
+    Flask and Quart expose the same module-level API (``request``, ``session``,
+    ``has_request_context``, ``url_for``, ``redirect``); subclasses only name
+    the module in ``_fw``.
+    """
+
+    _fw: Any
 
     # Properties, not class attributes: ABCMeta probes every namespace
     # value for __isabstractmethod__ at class creation, which unwraps
     # the context-local proxies outside any request and raises.
     @property
     def request(self) -> Any:
-        """Flask's request context-local proxy.
+        """The framework's request context-local proxy.
 
         Returns:
-            The Flask request proxy.
+            The request proxy.
         """
-        return flask.request
+        return self._fw.request
 
     @property
     def session(self) -> MutableMapping:
-        """Flask's session mapping.
+        """The framework's session mapping.
 
         Returns:
-            The Flask session proxy.
+            The session proxy.
         """
-        return flask.session
+        return self._fw.session
 
-    # The methods below are thin adapters over module-level framework
-    # functions; they must stay instance methods to satisfy the Backend
-    # interface, so PLR6301 (no-self-use) is suppressed on each.
-    def has_request_context(self) -> bool:  # noqa: PLR6301
-        """Whether a Flask request context is currently active.
+    def has_request_context(self) -> bool:
+        """Whether a request context is currently active.
 
         Returns:
             True if a request context is active.
         """
-        return flask.has_request_context()
+        return self._fw.has_request_context()
+
+    def url_for(self, endpoint: str, **values) -> str:
+        """Build a URL for an endpoint.
+
+        Returns:
+            The URL string for ``endpoint``.
+        """
+        return self._fw.url_for(endpoint, **values)
+
+    def redirect(self, location: str) -> Any:
+        """Build a redirect response to ``location``.
+
+        Returns:
+            A framework redirect response.
+        """
+        return self._fw.redirect(location)
+
+
+class FlaskBackend(_ContextLocalBackend):
+    """Backend adapter for a Flask server."""
+
+    _fw = flask
 
     def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
         """Register the before-request auth hook on a Flask server."""
@@ -349,27 +390,13 @@ class FlaskBackend(Backend):
             )
             return decide(flask.request.path, body)
 
-    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
-        """Build a URL for a Flask endpoint.
 
-        Returns:
-            The URL string for ``endpoint``.
-        """
-        return flask.url_for(endpoint, **values)
-
-    def redirect(self, location: str) -> Any:  # noqa: PLR6301
-        """Build a Flask redirect response to ``location``.
-
-        Returns:
-            A Flask redirect response.
-        """
-        return flask.redirect(location)
-
-
-class QuartBackend(Backend):
+class QuartBackend(_ContextLocalBackend):
     """Backend adapter for a Quart (async) server."""
 
+    _fw = quart
     is_async = True
+    oauth_extension_key = "authlib.integrations.quart_client"
 
     def __init__(self) -> None:
         """Create the Quart backend, requiring the optional ``quart`` extra.
@@ -377,40 +404,11 @@ class QuartBackend(Backend):
         Raises:
             ImportError: if Quart is not installed.
         """
-        if quart is None:
+        if not HAS_QUART:
             raise ImportError(
                 "Quart is not installed. Please install it with `pip install quart` "
                 "or `pip install dash[quart]` to use the Quart backend."
             )
-
-    @property
-    def request(self) -> Any:
-        """Quart's request context-local proxy.
-
-        Returns:
-            The Quart request proxy.
-        """
-        return quart.request
-
-    @property
-    def session(self) -> MutableMapping:
-        """Quart's session mapping.
-
-        Returns:
-            The Quart session proxy.
-        """
-        return quart.session
-
-    # The methods below are thin adapters over module-level framework
-    # functions; they must stay instance methods to satisfy the Backend
-    # interface, so PLR6301 (no-self-use) is suppressed on each.
-    def has_request_context(self) -> bool:  # noqa: PLR6301
-        """Whether a Quart request context is currently active.
-
-        Returns:
-            True if a request context is active.
-        """
-        return quart.has_request_context()
 
     def register_auth_hook(self, server, needs_body, decide) -> None:  # noqa: PLR6301
         """Register the before-request auth hook on a Quart server.
@@ -425,6 +423,7 @@ class QuartBackend(Backend):
             WS_CLIENT_COOKIE,
             close_anonymous_ws,
             mint_ws_client_id,
+            ws_client_cookie_header,
         )
 
         @server.before_request
@@ -456,30 +455,10 @@ class QuartBackend(Backend):
             # Minted on every response that lacks it -- including the BasicAuth
             # 401 challenge -- so it predates a later pre-login WS handshake.
             if quart.request.cookies.get(WS_CLIENT_COOKIE) is None:
-                response.set_cookie(
-                    WS_CLIENT_COOKIE,
-                    mint_ws_client_id(),
-                    httponly=True,
-                    samesite="Lax",
-                    path="/",
+                response.headers.add(
+                    "Set-Cookie", ws_client_cookie_header(mint_ws_client_id())
                 )
             return response
-
-    def url_for(self, endpoint: str, **values) -> str:  # noqa: PLR6301
-        """Build a URL for a Quart endpoint.
-
-        Returns:
-            The URL string for ``endpoint``.
-        """
-        return quart.url_for(endpoint, **values)
-
-    def redirect(self, location: str) -> Any:  # noqa: PLR6301
-        """Build a Quart redirect response to ``location``.
-
-        Returns:
-            A Quart redirect response.
-        """
-        return quart.redirect(location)
 
     def make_oauth(self, server) -> Any:  # noqa: PLR6301
         """Build the authlib OAuth registry for the Quart backend.
@@ -491,16 +470,6 @@ class QuartBackend(Backend):
         from dash_auth_async import quart_client  # noqa: PLC0415
 
         return quart_client.OAuth(server)
-
-    def get_oauth(self, server) -> Any:  # noqa: PLR6301
-        """Retrieve the Quart OAuth registry stored by :meth:`make_oauth`.
-
-        Returns:
-            The registry, or None if ``OIDCAuth`` has not run yet.
-        """
-        return getattr(server, "extensions", {}).get(
-            "authlib.integrations.quart_client"
-        )
 
     async def oauth_authorize_redirect(  # noqa: PLR6301
         self, client, redirect_uri: str, **kwargs
@@ -529,8 +498,6 @@ class QuartBackend(Backend):
         Returns:
             ``(quart_app, session["user"] or None)``.
         """
-        import quart  # noqa: PLC0415 — quart is an optional dependency
-
         # ``quart.current_app`` is a proxy; ``_get_current_object`` unwraps it to
         # the real Quart app (the key in ``_AUTH_BY_SERVER``). Go through
         # ``getattr`` because the attribute is absent from the proxy's type stub.
@@ -675,9 +642,6 @@ class FastAPIBackend(Backend):
             None,
         )
 
-    def _has_session_middleware(self, server) -> bool:
-        return self._session_middleware(server) is not None
-
     def setup_session(
         self, server, secret_key: str | None, secure_session: bool = False
     ) -> None:
@@ -711,7 +675,7 @@ class FastAPIBackend(Backend):
         Returns:
             True if session storage is available.
         """
-        return self._has_session_middleware(server)
+        return self._session_middleware(server) is not None
 
     def store_config(self, server, key: str, value: Any) -> None:  # noqa: PLR6301
         """Stash an app-scoped config value on the FastAPI ``server.state``."""
@@ -812,6 +776,13 @@ class FastAPIBackend(Backend):
         here is visible inside the Dash callback, which runs in the same
         task/context via the inner DashMiddleware's ``copy_context()``.
         """
+        from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
+            WS_CLIENT_COOKIE,
+            close_anonymous_ws,
+            mint_ws_client_id,
+            ws_client_cookie_header,
+        )
+
         backend = self
 
         class _AuthMiddleware:
@@ -830,12 +801,6 @@ class FastAPIBackend(Backend):
                 # already present at a later pre-login WS handshake. This ties an
                 # anonymous socket back to the browser that authenticates here,
                 # letting login retire the stale socket (see websocket_auth).
-                from .websocket_auth import (  # noqa: PLC0415 — avoid import cycle
-                    WS_CLIENT_COOKIE,
-                    close_anonymous_ws,
-                    mint_ws_client_id,
-                )
-
                 client_id = request.cookies.get(WS_CLIENT_COOKIE)
                 set_client_cookie = client_id is None
                 if set_client_cookie:
@@ -846,8 +811,7 @@ class FastAPIBackend(Backend):
                         message.setdefault("headers", []).append(
                             (
                                 b"set-cookie",
-                                f"{WS_CLIENT_COOKIE}={client_id}; Path=/; "
-                                f"HttpOnly; SameSite=Lax".encode("latin-1"),
+                                ws_client_cookie_header(client_id).encode("latin-1"),
                             )
                         )
                     await _send(message)
@@ -897,11 +861,7 @@ class FastAPIBackend(Backend):
                     # Authorized. If this browser is now logged in, retire any
                     # stale anonymous sockets it opened before login so the
                     # renderer reconnects authenticated before the first click.
-                    try:
-                        logged_in = backend.session.get("user") is not None
-                    except RuntimeError:
-                        logged_in = False  # no SessionMiddleware -> nothing to retire
-                    if logged_in:
+                    if backend.session_get("user") is not None:
                         close_anonymous_ws(client_id)
 
                     # Backfill Dash's request ContextVar so the catch-all's

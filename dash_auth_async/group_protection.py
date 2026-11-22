@@ -56,13 +56,9 @@ def _current_user() -> dict | None:
     """
     backend = get_active_backend()
     if backend.has_request_context():
-        # Normal HTTP path: read the user from the framework session.
-        try:
-            return backend.session.get("user")
-        except RuntimeError:
-            # Session unavailable (e.g. FastAPI without SessionMiddleware):
-            # treat as not authenticated rather than crashing.
-            return None
+        # Normal HTTP path: read the user from the framework session (None,
+        # i.e. unauthenticated, when the server has no session configured).
+        return backend.session_get("user")
     # WebSocket worker path: no framework context here, so read the user the
     # websocket_message hook stashed for this dispatch.
     return _WS_AUTH_USER.get()
@@ -171,6 +167,8 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
         missing_permissions_output = unauthenticated_output
 
     def decorator(output: OutputVal):
+        is_func = callable(output)
+
         def evaluate(value: OutputVal) -> Any:
             # Fallback outputs are documented as no-argument callables or
             # static values.
@@ -195,7 +193,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
         # isgeneratorfunction / isasyncgenfunction (dash _callback.py). A plain
         # def wrapper erases it -- a coroutine is never awaited, a streaming
         # generator is returned unconsumed.
-        if isinstance(output, Callable) and inspect.isasyncgenfunction(output):
+        if is_func and inspect.isasyncgenfunction(output):
             # A stream's body runs where no session is readable (Flask drives it
             # on a private loop thread), so gate it with the user captured at
             # dispatch. A denied user's fallback then travels as a normal
@@ -226,7 +224,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
 
             return agen_wrap
 
-        if isinstance(output, Callable) and inspect.isgeneratorfunction(output):
+        if is_func and inspect.isgeneratorfunction(output):
 
             @functools.wraps(output)
             def gwrap(*args, **kwargs):
@@ -238,7 +236,7 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
 
             return gwrap
 
-        if isinstance(output, Callable) and inspect.iscoroutinefunction(output):
+        if is_func and inspect.iscoroutinefunction(output):
 
             @functools.wraps(output)
             async def awrap(*args, **kwargs):
@@ -253,11 +251,9 @@ def protected(  # noqa: PLR0913 — public decorator with many optional knobs
             fallback = gate()
             if fallback is not _PROCEED:
                 return fallback
-            if isinstance(output, Callable):
-                return output(*args, **kwargs)
-            return output
+            return output(*args, **kwargs) if is_func else output
 
-        if isinstance(output, Callable):
+        if is_func:
             return wrap
         return wrap()
 
@@ -413,13 +409,7 @@ def _capture_session_id(_ctx) -> str | None:
     Returns:
         The session id, or None (no request, no session, or no id).
     """
-    backend = get_active_backend()
-    if not backend.has_request_context():
-        return None
-    try:
-        return backend.session.get(SESSION_ID_KEY)
-    except RuntimeError:  # no session configured on this server
-        return None
+    return get_active_backend().session_get(SESSION_ID_KEY)
 
 
 def _install_user_capture_hook() -> None:
