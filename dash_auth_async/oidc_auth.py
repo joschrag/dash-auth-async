@@ -1,4 +1,4 @@
-"""OpenID Connect authentication for Dash on Flask and Quart backends."""
+"""OpenID Connect authentication for Dash on Flask, Quart and FastAPI backends."""
 
 import inspect
 import logging

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `get_public_callbacks()` (internal, not exported) now returns a `frozenset` instead of a `list`
 
 ### Added
+- `SECURITY.md` with the supported versions and how to report a vulnerability privately. 1.x receives security fixes until 2027-05-22 (as 1.4.x releases from the `1.x` branch), for apps that cannot drop Python 3.10 or add the `oidc` extra yet
 - The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
 - Python 3.15 support (classifier and CI test matrix)
 - `Auth`, `Backend`, `FlaskBackend`, `QuartBackend`, `FastAPIBackend` and `get_url_base` can be imported from `dash_auth_async`. `Auth` was exported by upstream `dash-auth` but missing here; `Backend` is the class to subclass for a custom server. The old `dash_auth_async.<module>` import paths still work
