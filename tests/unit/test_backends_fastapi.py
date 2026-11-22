@@ -290,7 +290,7 @@ def _drive_replay(client_messages):
         received.append(await receive())  # cached body
         try:
             received.append(await asyncio.wait_for(receive(), 0.2))
-        except asyncio.TimeoutError:  # builtin TimeoutError only from 3.11
+        except TimeoutError:  # builtin TimeoutError only from 3.11
             received.append("blocked")
 
     middleware = auth_middleware_cls(inner_app)

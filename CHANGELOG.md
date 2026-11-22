@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `authlib` is now an optional dependency, installed with the `oidc` extra (`pip install dash-auth-async[oidc]`), matching upstream `dash-auth`. `BasicAuth`-only installs no longer pull in authlib and its crypto stack. **Upgrade note:** OIDC users must add the `oidc` extra
+- Using `OIDCAuth` or `get_oauth` without authlib installed now raises `ImportError` naming the `oidc` extra, instead of the opaque `'NoneType' object is not callable`
+- Package metadata: a real description, `Changelog` and `Issues` project links, the `Framework :: AsyncIO` and `Framework :: FastAPI` classifiers, and an SPDX `license = "MIT"` expression (PEP 639; the build now needs `setuptools>=77`)
+- The minimum Dash version is now 3 (`dash>=3`). Dash 2 was never covered by CI, whose lowest tested range is `>=3,<4`
+- Added the `Framework :: Dash` classifier and search keywords (including `quart`, which has no trove classifier)
+
+### Added
+- The package ships a `py.typed` marker (PEP 561), so type checkers use its inline type hints
+- Python 3.15 support (classifier and CI test matrix)
+
+### Removed
+- `dash_auth_async/version.py`. `dash_auth_async.__version__` is unchanged but now read from the installed package metadata, so it can no longer drift from `pyproject.toml`. Import it from `dash_auth_async`, not `dash_auth_async.version`
+- Python 3.10 support (end of life since October 2026). `requires-python` is now `>=3.11`
+
+### Security
+- Dropping Python 3.10 closes the `tornado` and `filelock` advisories that 1.3.6 left open on 3.10; every install now resolves `tornado>=6.6`
+
 ## [1.4.1] - 2026-11-20
 
 ### Fixed

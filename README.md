@@ -49,7 +49,17 @@ uv sync
 uv run pytest -k ba001
 ```
 
-Note that Python 3.10 or greater is required.
+Note that Python 3.11 or greater is required.
+
+## Upgrading to 2.0
+
+2.0 changes how the package installs. Code using `BasicAuth`, `OIDCAuth` and the group helpers is unchanged.
+
+1. **OIDC users:** add the `oidc` extra — `pip install dash-auth-async[oidc]` (plus `quart`/`fastapi` if you use those backends). Without it, `OIDCAuth` raises an `ImportError` naming the extra.
+2. **Python 3.11+** and **Dash 3+** are now required.
+3. **`dash_auth_async.version` is gone.** Read the version from `dash_auth_async.__version__`.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## Usage
 
@@ -193,6 +203,12 @@ def layout(user_id: str):
 ```
 
 ### OIDC Authentication
+
+OIDC needs authlib, shipped as the `oidc` extra:
+
+```bash
+pip install dash-auth-async[oidc]
+```
 
 To add authentication with OpenID Connect, you will first need to set up an OpenID Connect provider (IDP).
 This typically requires creating
@@ -384,6 +400,12 @@ if __name__ == "__main__":
 
 ##### OIDCAuth with Quart
 
+OIDC on Quart needs both extras:
+
+```
+pip install dash-auth-async[oidc,quart]
+```
+
 ```python
 import os
 from dash import Dash, html
@@ -410,7 +432,7 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8050, debug=True)
 ```
 
-> **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.10.
+> **Note:** The Quart backend requires Dash >= 4.2.0 and Python >= 3.11.
 
 #### FastAPI (async) Backend
 
@@ -443,6 +465,12 @@ if __name__ == "__main__":
 ```
 
 ##### OIDCAuth with FastAPI
+
+OIDC on FastAPI needs both extras:
+
+```
+pip install dash-auth-async[oidc,fastapi]
+```
 
 ```python
 import os
@@ -478,7 +506,7 @@ Notes:
   (Starlette forbids adding middleware after startup) — the normal usage pattern.
 - OIDC uses authlib's official `starlette_client`; no extra client module required.
 
-> The FastAPI backend requires Dash >= 4.2.0 and Python >= 3.10.
+> The FastAPI backend requires Dash >= 4.2.0 and Python >= 3.11.
 
 ### User-group-based permissions
 

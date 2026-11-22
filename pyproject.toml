@@ -1,20 +1,24 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "dash-auth-async"
 version = "1.4.1"
-description = "Dash Authorization Package."
+description = "Authentication and authorization for Dash apps on Flask, Quart and FastAPI, including async and WebSocket callbacks."
 readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "MIT"}
+requires-python = ">=3.11"
+license = "MIT"
+keywords = ["dash", "plotly", "authentication", "authorization", "oidc", "flask", "quart", "fastapi", "asyncio", "websocket"]
 authors = [
     {name = "Jonas Schrage", email = "119843859+joschrag@users.noreply.github.com"},
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
+    "Framework :: AsyncIO",
+    "Framework :: Dash",
+    "Framework :: FastAPI",
     "Framework :: Flask",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
@@ -22,37 +26,41 @@ classifiers = [
     "Intended Audience :: Healthcare Industry",
     "Intended Audience :: Manufacturing",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Database :: Front-Ends",
     "Topic :: Scientific/Engineering :: Visualization",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Widget Sets",
 ]
 dependencies = [
-    "authlib>=1.9.1",
     "flask>=3.1.3",
     "werkzeug>=3.1.8",
-    "dash>=2",
+    "dash>=3",
 ]
 
 [project.optional-dependencies]
+oidc = ["authlib>=1.9.1"]
 fastapi = ["dash[fastapi]>=4.2.0"]
 quart = ["dash[quart]>=4.2.0","httpx>=0.23.0"]
 async = ["dash[async]>=3.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/joschrag/dash-auth-async"
+Changelog = "https://github.com/joschrag/dash-auth-async/blob/main/CHANGELOG.md"
+Issues = "https://github.com/joschrag/dash-auth-async/issues"
 "Original project" = "https://github.com/plotly/dash-auth"
 
 [tool.setuptools.packages.find]
 include = ["dash_auth_async*"]
+
+[tool.setuptools.package-data]
+dash_auth_async = ["py.typed"]
 
 [dependency-groups]
 dev = [
@@ -94,15 +102,19 @@ constraint-dependencies = [
     "h2>=4.4.1",
     # GHSA-mpf4-983q-p7j4 and others: unbounded urlencoded/multipart
     # parsing DoS at and below 6.5.7, plus Dependabot alerts fixed in 6.6.
-    # tornado 6.6 needs Python 3.11+, so the 3.10 floor stays at 6.5.8.
     # Pulled in transitively via jupyter-client.
-    "tornado>=6.6; python_version >= '3.11'",
-    "tornado>=6.5.8",
+    "tornado>=6.6",
 ]
 override-dependencies = [
     "urllib3>=2.7.0",
     "selenium>=4.6.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-rsxX -vv"
+log_format = "%(asctime)s | %(levelname)s | %(name)s:%(lineno)d | %(message)s"
+log_cli_level = "ERROR"
 
 [tool.creosote]
 venvs = [".venv"]
@@ -112,7 +124,7 @@ sections = ["project.dependencies"]
 exclude-deps = []
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 preview = true
@@ -144,3 +156,7 @@ combine-as-imports = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.coverage.run]
+# Measure subprocesses too: the no-authlib test needs a fresh interpreter.
+patch = ["subprocess"]
