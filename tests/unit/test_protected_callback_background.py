@@ -21,12 +21,30 @@ import pytest
 pytest.importorskip("diskcache", reason="dash[diskcache] is not installed")
 
 import diskcache
-from dash import ALL, Dash, DiskcacheManager, Input, Output, html
+from dash import ALL, Dash, DiskcacheManager, Input, Output, _get_app, html
 from dash._utils import create_callback_id, stringify_id
 
 from dash_auth_async import BasicAuth, protected_callback
 
-pytestmark = pytest.mark.usefixtures("reset_active_backend")
+pytestmark = pytest.mark.usefixtures("reset_active_backend", "no_stale_app_context")
+
+
+@pytest.fixture
+def no_stale_app_context():
+    """Dash 4.1 and earlier leave ``app_context`` set after a same-thread request,
+    so ``get_app()`` in a later test returns an earlier app and the dispatch
+    gate is stored on the wrong server."""
+    token = _get_app.app_context.set(None)
+    yield
+    _get_app.app_context.reset(token)
+
+
+def _dash(backend):
+    if backend == "flask":
+        return Dash(__name__)  # Dash before 4.2 has no backend= keyword
+    pytest.importorskip(backend)
+    return Dash(__name__, backend=backend)
+
 
 BACKENDS = ["flask", "quart", "fastapi"]
 USERS = {"admin": "admin", "guest": "guest"}
@@ -46,9 +64,7 @@ def _app(backend, cache_dir, **protect_kwargs):
     Returns:
         ``(app, body)`` -- the app and the callback request body for it.
     """
-    if backend != "flask":
-        pytest.importorskip(backend)
-    app = Dash(__name__, backend=backend)
+    app = _dash(backend)
     BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     # Unique ids: callbacks register into Dash's process-global map.
     btn, out = f"btn-{uuid.uuid4().hex}", f"out-{uuid.uuid4().hex}"
@@ -218,9 +234,7 @@ def test_pcb006_denied_fallback_maps_wildcard_and_duplicate_outputs(backend, tmp
     """The trigger: a wildcard (``ALL``) output's spec is a list, and an
     ``allow_duplicate`` output's property carries an ``@hash`` suffix. The old
     serialiser indexed the list spec as a dict (500) and leaked the suffix."""
-    if backend != "flask":
-        pytest.importorskip(backend)
-    app = Dash(__name__, backend=backend)
+    app = _dash(backend)
     BasicAuth(app, USERS, user_groups={"admin": ["admin"]}, secret_key="Test!")
     kind, btn, out = (f"{p}-{uuid.uuid4().hex}" for p in ("item", "btn", "out"))
     app.layout = html.Div(
