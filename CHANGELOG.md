@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - `dash_auth_async/version.py`. `dash_auth_async.__version__` is unchanged but now read from the installed package metadata, so it can no longer drift from `pyproject.toml`. Import it from `dash_auth_async`, not `dash_auth_async.version`
 - Python 3.10 support (end of life since October 2026). `requires-python` is now `>=3.11`
+- **Breaking:** `OIDCAuth` no longer writes the IdP refresh token into `session["refresh_token"]` when the `offline_access` scope is requested. The session cookie is signed but not encrypted, so the token — a long-lived IdP credential that survives logout — was readable by anyone holding the cookie, and nothing in the library ever read it back. Code that relied on it must capture the token in an `after_logged_in` override and keep it server-side:
+
+  ```python
+  class MyOIDCAuth(OIDCAuth):
+      def after_logged_in(self, user, idp, token):
+          if user:
+              token_store[user["sub"]] = token.get("refresh_token")  # server-side
+          return super().after_logged_in(user, idp, token)
+  ```
 
 ### Security
 - Dropping Python 3.10 closes the `tornado` and `filelock` advisories that 1.3.6 left open on 3.10; every install now resolves `tornado>=6.6`
