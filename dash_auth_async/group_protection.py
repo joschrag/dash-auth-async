@@ -84,9 +84,14 @@ def list_groups(
 
     user_groups = user.get(groups_key, [])
     # Handle cases where groups are ,- or ;-separated string,
-    # may depend on OIDC provider
-    if isinstance(user_groups, str) and groups_str_split is not None:
-        user_groups = re.split(groups_str_split, user_groups)
+    # may depend on OIDC provider. Without a split, a string is ONE group:
+    # returning it bare would make `in`/set() match substrings and characters.
+    if isinstance(user_groups, str):
+        user_groups = (
+            re.split(groups_str_split, user_groups)
+            if groups_str_split is not None
+            else [user_groups]
+        )
     return user_groups
 
 
@@ -117,7 +122,6 @@ def check_groups(
         groups_key=groups_key,
         groups_str_split=groups_str_split,
     )
-
     if user_groups is None:
         # User is not authenticated
         return None
@@ -326,9 +330,17 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
     :param check_type: Type of check to perform.
         Either "one_of", "all_of" or "none_of"
 
+    With ``background=True`` the group check runs only on Dash's callback
+    endpoint, so the callback is kept out of MCP (``mcp_enabled=False``), and
+    ``api_endpoint`` or ``mcp_enabled=True`` raise ``ValueError``: both would
+    start the job without the check.
+
     Returns:
         A decorator that registers the protected Dash callback.
     """
+    kwargs = callback_kwargs
+    if callback_kwargs.get("background"):
+        kwargs = _without_ungated_entry_points(callback_kwargs)
 
     def decorator(func):
         guard = protected(
@@ -353,11 +365,11 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
             # dispatch instead -- Auth._authorize, on the start request and
             # every poll -- and register the job unwrapped. Registered first so
             # a failure leaves no ungated callback behind.
-            _register_dispatch_gate(callback_args, callback_kwargs, guard(_proceed))
+            _register_dispatch_gate(callback_args, kwargs, guard(_proceed))
             target = func
         else:
             target = guard(func)
-        wrapped_func = dash.callback(*callback_args, **callback_kwargs)(target)
+        wrapped_func = dash.callback(*callback_args, **kwargs)(target)
 
         # Return Dash's result as-is: a plain forwarding def would erase the
         # coroutine/generator kind of the user's function.
@@ -367,6 +379,31 @@ def protected_callback(  # noqa: PLR0913 — public decorator with many optional
 
 
 DISPATCH_GATES = "PROTECTED_DISPATCH_GATED_CALLBACKS"
+
+
+def _without_ungated_entry_points(callback_kwargs: dict) -> dict:
+    """Keep a dispatch-gated background job off routes that skip the gate.
+
+    MCP and ``api_endpoint`` run the callback outside ``_dash-update-component``,
+    where ``Auth._authorize`` never calls ``dispatch_gate_response``: any
+    logged-in user would start the job regardless of groups.
+
+    Returns:
+        ``callback_kwargs`` with ``mcp_enabled=False`` where Dash supports it.
+
+    Raises:
+        ValueError: if ``api_endpoint`` or ``mcp_enabled=True`` is requested.
+    """
+    for key in ("api_endpoint", "mcp_enabled"):
+        if callback_kwargs.get(key):
+            raise ValueError(
+                f"protected_callback(background=True) cannot use {key}: that "
+                "route starts the job without the group check."
+            )
+    # Dash versions without MCP have no such keyword; pass it only where it exists.
+    if "mcp_enabled" in inspect.signature(dash.callback).parameters:
+        return {**callback_kwargs, "mcp_enabled": False}
+    return callback_kwargs
 
 
 def _proceed() -> object:

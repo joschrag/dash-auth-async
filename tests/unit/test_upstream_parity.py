@@ -1,9 +1,14 @@
 """Differential tests: dash_auth_async must behave like upstream dash_auth.
 
 Hypothesis drives both libraries with the same inputs on the Flask backend
-(upstream is Flask-only) and asserts identical results. The only sanctioned
-divergence is fail-closed handling: where upstream crashes with a 500 on a
-malformed request, the fork must answer 401 instead.
+(upstream is Flask-only) and asserts identical results. Sanctioned divergences:
+
+- Fail-closed handling: where upstream crashes with a 500 on a malformed
+  request, the fork must answer 401 instead.
+- A string groups value with no ``groups_str_split`` is one group in the fork;
+  upstream leaves it bare, so ``in``/``set()`` match substrings and characters
+  (review #5). Those inputs are excluded via ``assume`` and pinned in
+  ``test_group_protection.py`` instead.
 """
 
 import base64
@@ -14,7 +19,7 @@ import dash
 import dash_auth as upstream
 import pytest
 from flask import Flask, session
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, assume, given, settings, strategies as st
 
 import dash_auth_async as fork
 from dash_auth_async.public_routes import get_public_routes as fork_get_public_routes
@@ -51,6 +56,11 @@ check_type = st.sampled_from(["one_of", "all_of", "none_of", "bogus"])
 groups_arg = st.one_of(st.none(), st.lists(group, min_size=1, max_size=3))
 
 
+def bare_string_groups(user, key="groups", split=None):
+    """True for the review-#5 inputs where the fork deliberately differs."""
+    return split is None and user is not None and isinstance(user.get(key), str)
+
+
 def outcome(fn, *args, **kwargs):
     """Return a comparable result: the value, or the raised exception type."""
     try:
@@ -71,6 +81,7 @@ def in_session(user, fn, *args, **kwargs):
 @SETTINGS
 @given(user=user_strategy, key=groups_key, split=groups_str_split)
 def test_parity_list_groups(user, key, split):
+    assume(not bare_string_groups(user, key, split))
     kwargs = {"groups_key": key, "groups_str_split": split}
     assert in_session(user, fork.list_groups, **kwargs) == in_session(
         user, upstream.list_groups, **kwargs
@@ -86,6 +97,7 @@ def test_parity_list_groups(user, key, split):
     ctype=check_type,
 )
 def test_parity_check_groups(user, groups, key, split, ctype):
+    assume(not bare_string_groups(user, key, split))
     kwargs = {
         "groups": groups,
         "groups_key": key,
@@ -107,6 +119,8 @@ def test_parity_check_groups(user, groups, key, split, ctype):
     arg=st.integers(),
 )
 def test_parity_protected(user, groups, ctype, missing, target_is_func, arg):
+    assume(not bare_string_groups(user))
+
     def run(lib):
         decorator = lib.protected(
             "unauthenticated",
