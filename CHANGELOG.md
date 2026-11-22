@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-11-22
 
 ### Changed
 - `authlib` is now an optional dependency, installed with the `oidc` extra (`pip install dash-auth-async[oidc]`), matching upstream `dash-auth`. `BasicAuth`-only installs no longer pull in authlib and its crypto stack. **Upgrade note:** OIDC users must add the `oidc` extra

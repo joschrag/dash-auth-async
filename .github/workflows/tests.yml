@@ -19,9 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     # A hung browser test otherwise holds the runner for GitHub's 6-hour default.
     timeout-minutes: 20
-    # Locked compiled deps (pydantic-core, lxml, ...) may lack 3.15 wheels and
-    # build from source; don't block on 3.15 until Dependabot bumps them.
-    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
