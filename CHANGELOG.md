@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-11-22
+
+### Security
+- A catch-all public route (e.g. `add_public_routes(app, ["/<page>"])`) no longer makes every callback public. Public routes were also matched against the callback endpoint `/_dash-update-component`, so such a rule let anonymous users run any callback. Public routes now apply only to non-callback paths; callbacks are made public with `public_callback`
+- A callback with a `pathname` input no longer runs without login just because that pathname is a public route. It now has to read only URL props (`pathname`, `search`, `hash`, `href`); Dash's own pages router keeps its `routing_callback_inputs`. The pathname must also match a public route after percent-decoding, so `/reports/2024%2Fsecret` no longer passes as the public `/reports/<id>`. A group-protected background routing callback now runs its group check on public pages too. **Upgrade note:** a custom routing callback with other inputs or state (e.g. `State("store", "data")`) now needs a login on public pages; make it public with `public_callback` if that is intended
+- `protected_callback(..., background=True)` can no longer be started through Dash's MCP server or an `api_endpoint`. Both run the callback outside `/_dash-update-component`, where the group check lives, so any logged-in user could start a group-protected job. Such callbacks are now registered with `mcp_enabled=False`, and passing `api_endpoint` or `mcp_enabled=True` raises `ValueError`. **Upgrade note:** to expose a protected job to MCP or an API route, check the groups inside a separate, non-background callback
+- FastAPI apps mounted under a prefix (a Starlette `Mount` or a `root_path`) now see the app-relative path in the auth check, the same path Dash uses. Before, the prefix stayed in the path, so the callback endpoint never matched: the group check for protected background callbacks was skipped, public routes and callbacks never matched, and OIDC login looped
+- A groups value stored as a single string (e.g. `groups_key="role"` with `role: "superadmin"`) is now treated as one group by `check_groups`, `protected` and `protected_callback` when no `groups_str_split` is set. Before, they matched substrings: `all_of=["admin"]` let `"superadmin"` or `"nonadmin"` through, and `one_of` compared single characters. `list_groups` still returns the bare string in 1.x (2.0 returns a list). Upstream `dash-auth` still has this bug
+- `OIDCAuth` no longer writes the IdP refresh token into `session["refresh_token"]` when the `offline_access` scope is requested. The session cookie is signed but not encrypted, so the token — a long-lived IdP credential that survives logout — was readable by anyone holding the cookie, and nothing in the library ever read it back. **Upgrade note:** code that relied on it must capture the token in an `after_logged_in` override and keep it server-side:
+
+  ```python
+  class MyOIDCAuth(OIDCAuth):
+      def after_logged_in(self, user, idp, token):
+          if user:
+              token_store[user["sub"]] = token.get("refresh_token")  # server-side
+          return super().after_logged_in(user, idp, token)
+  ```
+
+### Fixed
+- Under a mount or proxy prefix (`requests_pathname_prefix="/app/"`), `OIDCAuth` now sends users back to `/app/` after login, and the logout page's "Go back" link points there too. Before, both used the server-side routes prefix (`/`), which sent users to the site root, outside the app
+
 ## [1.4.1] - 2026-11-20
 
 ### Fixed
