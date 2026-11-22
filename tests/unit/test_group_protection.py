@@ -1,3 +1,4 @@
+import dash
 from flask import Flask, session
 
 from dash_auth_async import check_groups, list_groups, protected
@@ -77,3 +78,15 @@ def test_gp003_protected():
 
         del session["user"]
         assert f1() == "unauthenticated"
+
+
+def test_gp022_background_kwargs_on_dash_without_mcp(monkeypatch):
+    # Dash before MCP rejects an unknown mcp_enabled keyword, so on those
+    # versions the background kwargs must pass through without it.
+    from dash_auth_async.group_protection import _without_ungated_entry_points
+
+    def callback_without_mcp(*_args, background=False, **_kwargs): ...
+
+    monkeypatch.setattr(dash, "callback", callback_without_mcp)
+    kwargs = {"background": True, "manager": None}
+    assert _without_ungated_entry_points(kwargs) == kwargs
