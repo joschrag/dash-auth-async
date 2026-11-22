@@ -1,11 +1,18 @@
 """Framework-agnostic authentication base class for Dash."""
 
 from abc import ABC, abstractmethod
+from urllib.parse import unquote
 
 from dash import Dash
 
 # Dash's pre-setup callback registry; no public API equivalent exists.
 from dash._callback import GLOBAL_CALLBACK_MAP  # noqa: PLC2701
+
+# dcc.Location's URL props: a routing callback may read only these.
+_LOCATION_PROPS = frozenset({"pathname", "search", "hash", "href"})
+# Dash's pages router (dash.py: Output(_ID_CONTENT, ...), Output(_ID_STORE, ...)).
+# Its extra inputs are app.routing_callback_inputs, passed to page layouts only.
+_PAGES_ROUTER_OUTPUT = ".._pages_content.children..._pages_store.data.."
 
 from .backends import (
     Backend,
@@ -125,19 +132,19 @@ class Auth(ABC):
             if body.get("output") in public_callbacks or _is_stream_transport(body):
                 return None
 
-            # A routing callback (one registered with a pathname input) is
-            # public when that pathname hits a public route
+            # A routing callback on a public pathname needs no login, but a
+            # group-protected background one still runs its dispatch gate.
             if self._is_public_routing_callback(body):
-                return None
-
-        # If the route is not a callback route, check whether the path
-        # matches a public route, or whether the request is authorised
-        if public_routes.test(path) or self.is_authorized():
-            if path == self._callback_path():
-                # Group-protected background callbacks are gated here, not in
-                # their job process (which has no session to read).
                 return dispatch_gate_response(self.app, body)
-            return None
+
+        # Public routes apply to non-callback paths only: a catch-all rule
+        # like "/<page>" would otherwise match the callback endpoint itself
+        # and make every callback public.
+        is_callback = path == self._callback_path()
+        if (not is_callback and public_routes.test(path)) or self.is_authorized():
+            # Group-protected background callbacks are gated here, not in
+            # their job process (which has no session to read).
+            return dispatch_gate_response(self.app, body) if is_callback else None
 
         # Otherwise, ask the user to log in
         return self.login_request()
@@ -158,19 +165,18 @@ class Auth(ABC):
             True to allow the callback, False to reject the connection.
         """
         payload = payload or {}
-        public_callbacks = get_public_callbacks(self.app)
-        if payload.get("output") in public_callbacks:
+        # A group-protected background callback's job is registered ungated
+        # (its gate runs in _authorize, over HTTP). The renderer never sends
+        # background callbacks over the socket, so refuse them here -- before
+        # any public check -- rather than run the job without the group check.
+        if refuses_ws(self.app, payload.get("output")):
+            return False
+
+        if payload.get("output") in get_public_callbacks(self.app):
             return True
 
         if self._is_public_routing_callback(payload):
             return True
-
-        # A group-protected background callback's job is registered ungated
-        # (its gate runs in _authorize, over HTTP). The renderer never sends
-        # background callbacks over the socket, so refuse them here rather
-        # than let a crafted message run the job without the group check.
-        if refuses_ws(self.app, payload.get("output")):
-            return False
 
         return user is not None
 
@@ -183,9 +189,14 @@ class Auth(ABC):
         them let any callback be invoked unauthenticated by relabelling one
         input as ``pathname`` with a public-route value.
 
+        Only callbacks that read nothing but URL props count (Dash's pages
+        router excepted, see ``_PAGES_ROUTER_OUTPUT``): any other input would
+        let an anonymous caller drive the callback through it.
+
         Returns:
-            True if the callback declares pathname inputs and every value the
-            request supplies for them matches a public route.
+            True if the callback declares pathname inputs, reads only URL props,
+            and every pathname value matches a public route both raw and
+            percent-decoded (Dash's pages router renders the decoded one).
         """
         output = body.get("output")
         if not isinstance(output, str):
@@ -194,6 +205,11 @@ class Auth(ABC):
         # migrates them onto the app, which may not have run yet.
         spec = self.app.callback_map.get(output) or GLOBAL_CALLBACK_MAP.get(output)
         if not spec:
+            return False
+        if output != _PAGES_ROUTER_OUTPUT and any(
+            dep.get("property") not in _LOCATION_PROPS
+            for dep in (*spec["inputs"], *spec.get("state", ()))
+        ):
             return False
 
         # Dash builds the callback arguments positionally from inputs + state,
@@ -212,7 +228,11 @@ class Auth(ABC):
         ]
         public_routes = get_public_routes(self.app)
         return bool(pathnames) and all(
-            isinstance(p, str) and p and public_routes.test(p) for p in pathnames
+            isinstance(p, str)
+            and p
+            and public_routes.test(p)
+            and public_routes.test(unquote(p))
+            for p in pathnames
         )
 
     @abstractmethod

@@ -13,7 +13,6 @@ from flask import Response
 from werkzeug.routing import Map, Rule
 
 from dash_auth_async.auth import Auth
-from dash_auth_async.public_routes import get_url_base
 
 from .backends import Backend, detect_backend
 from .stream_revocation import (
@@ -341,7 +340,9 @@ class OIDCAuth(Auth):
         # captured at dispatch, so mark the session id revoked for them to see.
         revoke_session_streams(self.app, self.session.get(SESSION_ID_KEY))
         self.session.clear()
-        base_url = get_url_base(self.app) or "/"
+        # Browser-facing link: the prefix the browser requests (e.g. "/app/"
+        # under a mount), not the server-side routes prefix.
+        base_url = self.app.config.requests_pathname_prefix
         page = (
             self.logout_page
             or f"""
@@ -427,6 +428,11 @@ class OIDCAuth(Auth):
                         user["params"] = value1
                     return super().after_logged_in(user, idp, token)
 
+        The IdP ``token`` (including any ``refresh_token``) is not stored: the
+        session cookie is signed but not encrypted, so it is readable by the
+        client. An override that needs the refresh token must keep it
+        server-side (e.g. a store keyed by ``user["sub"]``).
+
         Returns:
             A redirect response to the app's base URL.
         """
@@ -434,13 +440,10 @@ class OIDCAuth(Auth):
             self.session["user"] = user
             self.session["idp"] = idp
             ensure_session_id(self.session)
-            oauth_scope = self.get_oauth_client(idp).client_kwargs["scope"]
-            if "offline_access" in oauth_scope:
-                self.session["refresh_token"] = token.get("refresh_token")
             if self.log_signins:
                 logging.info("User %s is logging in.", user.get("email"))
 
-        return self.backend.redirect(get_url_base(self.app) or "/")
+        return self.backend.redirect(self.app.config.requests_pathname_prefix)
 
     def is_authorized(self):  # pylint: disable=C0116
         """Check whether the user is authenticated.

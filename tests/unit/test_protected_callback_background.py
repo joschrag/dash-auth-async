@@ -263,3 +263,31 @@ def test_pcb006_denied_fallback_maps_wildcard_and_duplicate_outputs(backend, tmp
         stringify_id({"type": kind, "index": 1}): {"children": "d1"},
         out: {"children": "denied"},
     }
+
+
+def test_pcb007_background_callback_is_not_an_mcp_tool(tmp_path):
+    """Review #3: MCP ran the job via _prepare_callback, skipping the dispatch
+    gate, so any logged-in user without the group could start it."""
+    pytest.importorskip("dash.mcp")
+    from dash.mcp.primitives.tools.callback_adapter_collection import (
+        CallbackAdapterCollection,
+    )
+
+    app, body = _app("flask", tmp_path)
+    with app.server.test_request_context("/"):
+        app._setup_server()
+        tools = CallbackAdapterCollection(app)._tool_names_map
+    assert body["output"] not in tools
+
+
+@pytest.mark.parametrize(
+    "entry_point", [{"api_endpoint": "/api/job"}, {"mcp_enabled": True}]
+)
+def test_pcb008_ungated_entry_points_are_refused(tmp_path, entry_point):
+    """Review #3: api_endpoint stored the ungated job; mcp_enabled=True exposed
+    it to MCP. Both must fail at registration, before anything is stored."""
+    from dash._callback import GLOBAL_API_PATHS
+
+    with pytest.raises(ValueError, match="without the group check"):
+        _app("flask", tmp_path, **entry_point)
+    assert "/api/job" not in GLOBAL_API_PATHS

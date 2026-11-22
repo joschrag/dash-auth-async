@@ -1,8 +1,12 @@
 name: Tests
 
+# Read-only token: Codecov uses its own token.
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [main]
+    branches: [main, 1.x]
   pull_request:
 
 jobs:
@@ -82,3 +86,14 @@ jobs:
 
       - name: Build package with uv
         run: uv build
+
+  # The one check branch rules require, so matrix changes never need a ruleset
+  # edit. always() is load-bearing: a skipped required check counts as passing.
+  tests-passed:
+    if: always()
+    needs: [test, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ needs.test.result }}" = success
+          test "${{ needs.coverage.result }}" = success

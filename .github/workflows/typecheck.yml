@@ -1,8 +1,12 @@
 name: Typecheck
 
+# Read-only token: it only checks out code.
+permissions:
+  contents: read
+
 on:
   push:
-    branches: [main]
+    branches: [main, 1.x]
   pull_request:
 
 jobs:
