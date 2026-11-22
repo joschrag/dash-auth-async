@@ -1,13 +1,15 @@
 """Public route and callback registration for unauthenticated access."""
 
 import os
+from typing import Any
 
 from dash import Dash, callback, get_app
 
-# create_callback_id is the same helper Dash uses internally to key its
-# callback map; no public API equivalent exists.
+# The helpers Dash uses internally to key its callback map; no public API
+# equivalent exists.
+from dash._grouping import flatten_grouping  # noqa: PLC2701
 from dash._utils import create_callback_id  # noqa: PLC2701
-from dash.dependencies import handle_callback_args
+from dash.dependencies import Output, handle_grouped_callback_args
 from werkzeug.routing import Map, MapAdapter, Rule
 
 from .backends import detect_backend
@@ -28,6 +30,22 @@ BASE_PUBLIC_ROUTES = [
 ]
 PUBLIC_ROUTES = "PUBLIC_ROUTES"
 PUBLIC_CALLBACKS = "PUBLIC_CALLBACKS"
+
+
+def callback_id(callback_args, callback_kwargs) -> tuple[Any, str]:
+    """Derive the id Dash keys a callback under, exactly as ``register_callback``.
+
+    Deterministic and independent of ``GLOBAL_CALLBACK_MAP`` state. Uses the
+    grouped parser so flexible-signature (dict) outputs/inputs work too.
+
+    Returns:
+        ``(output, callback_id)``: the (possibly grouped) output spec and its id.
+    """
+    output, inputs, _state, _indices, _prevent = handle_grouped_callback_args(
+        callback_args, callback_kwargs
+    )
+    flat_output = output if isinstance(output, Output) else flatten_grouping(output)
+    return output, create_callback_id(flat_output, inputs, no_output=not flat_output)
 
 
 def get_url_base(app: Dash) -> str:
@@ -107,17 +125,15 @@ def public_callback(*callback_args, **callback_kwargs):
         # registered (re-runs, or several apps sharing one process), and unlike
         # source-text comparison, which mis-whitelists callbacks sharing a body
         # and raises on lambdas/REPL-defined functions.
-        output, inputs, _state, _prevent = handle_callback_args(
-            callback_args, callback_kwargs
-        )
-        callback_id = create_callback_id(output, inputs, no_output=not output)
+        _output, cb_id = callback_id(callback_args, callback_kwargs)
         try:
             app = get_app()
             backend = detect_backend(app.server)
             backend.store_config(
                 app.server,
                 PUBLIC_CALLBACKS,
-                [*backend.read_config(app.server, PUBLIC_CALLBACKS, []), callback_id],
+                backend.read_config(app.server, PUBLIC_CALLBACKS, frozenset())
+                | {cb_id},
             )
         except Exception:
             print(
@@ -138,15 +154,17 @@ def get_public_routes(app: Dash) -> MapAdapter:
     Returns:
         The MapAdapter holding the app's registered public routes.
     """
-    return detect_backend(app.server).read_config(
-        app.server, PUBLIC_ROUTES, Map([]).bind("")
-    )
+    routes = detect_backend(app.server).read_config(app.server, PUBLIC_ROUTES)
+    # Not a read_config default: that would build a Map on every request.
+    return routes if routes is not None else Map([]).bind("")
 
 
-def get_public_callbacks(app: Dash) -> list:
+def get_public_callbacks(app: Dash) -> frozenset[str]:
     """Retrieve the public callbacks ids.
 
     Returns:
-        The list of whitelisted public callback ids.
+        The set of whitelisted public callback ids (O(1) membership per request).
     """
-    return detect_backend(app.server).read_config(app.server, PUBLIC_CALLBACKS, [])
+    return detect_backend(app.server).read_config(
+        app.server, PUBLIC_CALLBACKS, frozenset()
+    )

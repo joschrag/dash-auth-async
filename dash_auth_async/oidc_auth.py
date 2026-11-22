@@ -127,6 +127,19 @@ class OIDCAuth(Auth):
         self.log_signins = log_signins
         self.idp_selection_route = idp_selection_route
         self.logout_page = logout_page
+        # Built once: is_authorized runs on every protected request.
+        self._oidc_routes = Map(
+            [
+                Rule(x)
+                for x in (
+                    login_route,
+                    logout_route,
+                    callback_route,
+                    idp_selection_route,
+                )
+                if x
+            ]
+        ).bind("")
 
         self.backend.setup_session(app.server, secret_key, secure_session)
 
@@ -450,19 +463,7 @@ class OIDCAuth(Auth):
         Returns:
             True if the path is an OIDC route or a user is in the session.
         """
-        map_adapter = Map(
-            [
-                Rule(x)
-                for x in [
-                    self.login_route,
-                    self.logout_route,
-                    self.callback_route,
-                    self.idp_selection_route,
-                ]
-                if x
-            ]
-        ).bind("")
-        if map_adapter.test(self.backend.current_path()):
+        if self._oidc_routes.test(self.backend.current_path()):
             return True
         if "user" not in self.session:
             return False

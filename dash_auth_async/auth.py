@@ -108,9 +108,8 @@ class Auth(ABC):
         Returns:
             None to allow the request, or a login response to reject it.
         """
-        public_routes = get_public_routes(self.app)
-        public_callbacks = get_public_callbacks(self.app)
-        if path == self._callback_path():
+        is_callback = path == self._callback_path()
+        if is_callback:
             # Treat a missing, unparseable or non-object body (valid JSON
             # that is a list/string/number) as unauthorised rather than
             # crashing with AttributeError/KeyError → 500.
@@ -122,6 +121,7 @@ class Auth(ABC):
             # page's signed endId (403 otherwise), and frames reach that topic
             # only from uplinks that already passed this check -- so anonymous
             # pages can read their public streams without exposing anyone else's.
+            public_callbacks = get_public_callbacks(self.app)
             if body.get("output") in public_callbacks or _is_stream_transport(body):
                 return None
 
@@ -132,12 +132,10 @@ class Auth(ABC):
 
         # If the route is not a callback route, check whether the path
         # matches a public route, or whether the request is authorised
-        if public_routes.test(path) or self.is_authorized():
-            if path == self._callback_path():
-                # Group-protected background callbacks are gated here, not in
-                # their job process (which has no session to read).
-                return dispatch_gate_response(self.app, body)
-            return None
+        if get_public_routes(self.app).test(path) or self.is_authorized():
+            # Group-protected background callbacks are gated here, not in
+            # their job process (which has no session to read).
+            return dispatch_gate_response(self.app, body) if is_callback else None
 
         # Otherwise, ask the user to log in
         return self.login_request()
@@ -158,8 +156,7 @@ class Auth(ABC):
             True to allow the callback, False to reject the connection.
         """
         payload = payload or {}
-        public_callbacks = get_public_callbacks(self.app)
-        if payload.get("output") in public_callbacks:
+        if payload.get("output") in get_public_callbacks(self.app):
             return True
 
         if self._is_public_routing_callback(payload):
